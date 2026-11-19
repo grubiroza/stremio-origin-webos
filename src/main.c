@@ -329,6 +329,10 @@ int main(int argc, char **argv) {
     if (app_behind()) { app_tick_behind(dtReal < 0.25f ? dtReal : 0.25f); mem_guard(); if (app_behind()) SDL_WaitEventTimeout(NULL, 100); continue; } /* behind another app (#69): nothing drawn, no pictures, no pace; a key or the focus wakes it at once (and back in front: drawn at once) */
     img_frame(); Uint32 tI0 = SDL_GetTicks(); img_pump(); Uint32 tImg = SDL_GetTicks() - tI0; static double accPre; double accPreFrame = SDL_GetTicks() - tP0 + tEv; accPre += accPreFrame;
     run_script(script, frame); stress_tick();
+    if (frame % 15 == 0) { /* domar (development): the pointer without a Magic Remote. A file dev.cmd in the app's data folder, looked for four times a second: lines "move X Y", "click X Y", "press X Y" and "release X Y" (a held click, in two files), "wheel N" (layout units, 1920 x 1080), done once, the file removed */
+      static char dc[1200]; if (!dc[0]) snprintf(dc, sizeof dc, "%s/dev.cmd", plat_data_dir()); FILE *df = fopen(dc, "r");
+      if (df) { char ln[96]; float x, y; while (fgets(ln, sizeof ln, df)) { if (sscanf(ln, "move %f %f", &x, &y) == 2) app_pointer_move(x, y); else if (sscanf(ln, "click %f %f", &x, &y) == 2) { app_pointer_button(1, x, y); app_pointer_button(0, x, y); } else if (sscanf(ln, "press %f %f", &x, &y) == 2) app_pointer_button(1, x, y); else if (sscanf(ln, "release %f %f", &x, &y) == 2) app_pointer_button(0, x, y); else if (sscanf(ln, "wheel %f", &x) == 1) app_pointer_wheel(0, x); }
+        fclose(df); remove(dc); fprintf(stderr, "[dev] pointer commands from dev.cmd\n"); } }
     { static int crashAt = -2; if (crashAt == -2) crashAt = getenv("SB_CRASH_AT") ? atoi(getenv("SB_CRASH_AT")) : -1; /* development: a crash at that frame, to test its report */
       if (crashAt >= 0 && frame == crashAt) crash_deep(3);
       static int bundleAt = -2; if (bundleAt == -2) bundleAt = getenv("SB_BUNDLE_OUT") ? 400 : -1; /* development: what Share logs would send, written to a file */
