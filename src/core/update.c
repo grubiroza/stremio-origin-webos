@@ -212,6 +212,14 @@ void update_install(void) {
   if (app_now() - U.openAt < 0.9) return; /* the OK that opened this page */
   if (!U.has) { update_check(1); return; }
   if (U.state == UPD_INSTALLING) return;
+  /* domar (pin): a build that carries changes of its own loses them to a release installed over it. With a file
+     "update.pin" in the app's data folder the notice stays (the sign that a new version is out) but Install installs
+     nothing and says the file's first line (or that the build is pinned): the new version goes on the TV by hand, once
+     the changes are in it. No such file: Install works as ever. The Homebrew Channel's own Update / Reinstall is not
+     covered by this */
+  { char pp[1200], pm[200] = ""; snprintf(pp, sizeof pp, "%s/update.pin", plat_data_dir()); FILE *pf = fopen(pp, "r");
+    if (pf) { if (fgets(pm, sizeof pm, pf)) pm[strcspn(pm, "\r\n")] = 0; fclose(pf); if (!pm[0]) snprintf(pm, sizeof pm, "%s", "This build is pinned: a new version is installed by hand");
+      U.state = UPD_AVAIL; snprintf(U.msg, sizeof U.msg, "%s", pm); fprintf(stderr, "[update] pinned build (update.pin): %s not installed\n", U.avail.ver); toast(pm, 2500, NULL); changed(); return; } }
   U.state = UPD_INSTALLING; snprintf(U.msg, sizeof U.msg, "%s", T("Downloading…")); changed();
   fprintf(stderr, "[update] installing %s\n", U.avail.ver);
   relaunch_arm();
