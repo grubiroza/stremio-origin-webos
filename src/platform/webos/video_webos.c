@@ -167,6 +167,14 @@ static void video_data_json(char *vd, size_t n, const char *mid) {
     "\"hfr\":false,\"path\":\"network\",\"pixelAspectRatio\":{\"height\":1,\"width\":1},\"rotation\":\"0\",\"scanType\":\"%s\",\"specificRendering\":\"none\"}}",
     mid, bits > 0 ? bits : 8000000L, rate, hdr, h, w, strstr(scan, "inter") ? "VIDEO_INTERLACED" : "VIDEO_PROGRESSIVE");
 }
+/* domar: the TV is told when the film is paused and when it plays again (AcbAPI_setState: 2 playing, 3 paused). It was
+   told once, when the film was bound, and for the TV a paused film went on "playing". Its own screen saver reads this
+   (com.webos.app.screensaver, MainView.qml, checkPIGState): over an app whose video plays in a window it only masks
+   what lies round the window and leaves the window open (black bars above and below a paused 2.40:1 film, the app's
+   own pictures still showing between them; over a 16:9 film nothing at all); told the film is paused, it covers the
+   whole screen. Only once the film is bound (the bind itself ends with the same call) */
+static unsigned acbBound;
+static void acb_play_state(int paused) { if (!acb || !acbState || acbBound != session) return; long task = 0; int r = acbState(acb, 1, paused ? 3 : 2, &task); fprintf(stderr, "[video] the TV told: the film %s (%d)\n", paused ? "is paused" : "plays", r); }
 static void sleep_ms(int ms) { struct timespec t = { ms / 1000, (long)(ms % 1000) * 1000000L }; nanosleep(&t, NULL); }
 static void *bind_plane(void *u) {
   unsigned mine = (unsigned)(uintptr_t)u; char mid[64]; pthread_mutex_lock(&mu); snprintf(mid, sizeof mid, "%s", S.mediaId); pthread_mutex_unlock(&mu); long task = 0;
@@ -184,7 +192,7 @@ static void *bind_plane(void *u) {
     if (q.csx >= 0 && acbCustomWindow) { SDL_Rect d = to_plane(q.cdx, q.cdy, q.cdw, q.cdh); fprintf(stderr, "[video] bind crop=%d\n", acbCustomWindow(acb, q.csx, q.csy, q.csw, q.csh, d.x, d.y, d.w, d.h, q.cdx == 0 && q.cdy == 0 && q.cdw == 1920 && q.cdh == 1080, &task)); }
     else { const char *how; int r = acb_window(&q, &task, &how); fprintf(stderr, "[video] bind %s=%d\n", how, r); }
     pthread_mutex_unlock(&acbWinMu); }
-  if (!ALIVE()) return NULL; fprintf(stderr, "[video] bind playing=%d\n", acbState(acb, 1, S.pausedByUs ? 3 : 2, &task));
+  if (!ALIVE()) return NULL; fprintf(stderr, "[video] bind playing=%d\n", acbState(acb, 1, S.pausedByUs ? 3 : 2, &task)); acbBound = mine; /* (domar: from here pauses and plays are passed on) */
 #undef ALIVE
   return NULL;
 }
@@ -301,10 +309,13 @@ static bool on_load(LSHandle *h, LSMessage *m, void *ctx) {
 static int ss_answer(const char *p, char *out, size_t cap) {
   char ts[64]; if (!ssreq_active(p, ts, sizeof ts)) { if (p && strstr(p, "state")) fprintf(stderr, "[video] screen saver request not about starting: %.100s\n", p); return 0; } /* (read whatever its spacing: it came pretty-printed) */
   pthread_mutex_lock(&mu); int hold = screensaverHeld(); int pl = S.playing, pz = S.pausedByUs; pthread_mutex_unlock(&mu);
-  if (hold && pz && app_behind()) hold = 0; /* (#69: behind another app, its own screen saver never shows over a paused film: the TV's comes) */
-  extern volatile int saver_tv_hold; int own = 0; if (!hold && saver_tv_hold && !app_behind()) hold = own = 1; /* the app's own screen saver is on (Settings): it comes, never the TV's over it; Off: the TV's as before */
+  /* domar: only what plays (or is loading, buffering, seeking) holds the TV's screen saver. Over a paused film and in
+     the menus the TV's own comes at its own time (two minutes without a key), after the app's own, which comes first
+     (Settings: from one minute on) and goes on under it. The TV's is dark, and a pause can last an hour. Before: held
+     for as long as the app's own was on in Settings, so the app's pictures stayed up until the TV switched itself off */
+  if (hold && pz) hold = 0;
   snprintf(out, cap, "{\"clientName\":\"%s\",\"ack\":%s,\"timestamp\":%s}", SB_APP_ID, hold ? "false" : "true", ts); /* the timestamp sent back exactly as it came */
-  fprintf(stderr, "[video] screen saver asked: %s\n", !hold ? "let through" : own ? "held (the app's own screen saver comes instead)" : pz ? "held (a film is paused: the app's own screen saver comes over it)" : pl ? "held (a film plays)" : "held (a film is loading, buffering or seeking)");
+  fprintf(stderr, "[video] screen saver asked: %s\n", hold ? (pl ? "held (a film plays)" : "held (a film is loading, buffering or seeking)") : pz ? "let through (a film is paused: the TV's own comes)" : "let through (nothing plays: the TV's own comes)");
   return 1;
 }
 static int failed(const char *p) { const char *v = p ? strstr(p, "\"returnValue\"") : NULL; if (!v) return 0; v += 13; while (*v == ' ' || *v == ':') v++; return !strncmp(v, "false", 5); }
@@ -410,7 +421,7 @@ void video_load_timed(const char *base, double durSec) { resume.pause = 0;
   resume.on = 0; timed.on = 1; timed.off = 0; timed.dur = durSec; snprintf(timed.base, sizeof timed.base, "%s", base); snprintf(url, sizeof url, "%s?t=0", base); start_load();
 }
 static void simple(const char *method) { char mid[64]; pthread_mutex_lock(&mu); snprintf(mid, sizeof mid, "%s", S.mediaId); pthread_mutex_unlock(&mu); if (!mid[0]) return; char b[160]; snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", mid); call(method, b, NULL, NULL); }
-void video_play(void) { resume.pause = 0; pthread_mutex_lock(&mu); S.pausedByUs = 0; if (S.st == VID_PAUSED) { S.st = VID_PLAYING; S.pos = pos_now(); posAt = SDL_GetTicks() / 1000.0; S.playing = 1; } pthread_mutex_unlock(&mu); simple("play"); }
+void video_play(void) { resume.pause = 0; pthread_mutex_lock(&mu); S.pausedByUs = 0; if (S.st == VID_PAUSED) { S.st = VID_PLAYING; S.pos = pos_now(); posAt = SDL_GetTicks() / 1000.0; S.playing = 1; } pthread_mutex_unlock(&mu); simple("play"); acb_play_state(0); }
 /* the stream's own volume (0-100), reached over easeMs (the media service's own ease: no steps of ours) */
 int video_has_media(void) { pthread_mutex_lock(&mu); int h = S.mediaId[0] != 0; pthread_mutex_unlock(&mu); return h; }
 void video_set_volume(int pct, int easeMs) {
@@ -420,7 +431,7 @@ void video_set_volume(int pct, int easeMs) {
   else snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"volume\":%d}", mid, pct);
   call("setVolume", b, NULL, NULL);
 }
-void video_pause(void) { pthread_mutex_lock(&mu); S.pos = pos_now(); posAt = SDL_GetTicks() / 1000.0; S.playing = 0; S.pausedByUs = 1; S.st = VID_PAUSED; pthread_mutex_unlock(&mu); simple("pause"); } /* (the time no longer guessed on from here: only the TV's own reports move it, so a pause it ignores shows) */
+void video_pause(void) { pthread_mutex_lock(&mu); S.pos = pos_now(); posAt = SDL_GetTicks() / 1000.0; S.playing = 0; S.pausedByUs = 1; S.st = VID_PAUSED; pthread_mutex_unlock(&mu); simple("pause"); acb_play_state(1); } /* (the time no longer guessed on from here: only the TV's own reports move it, so a pause it ignores shows) */
 /* presses add up: the shown position moves at once, the pipeline gets one seek 350 ms after the last (four
    seeks in under a second were followed by a dead pipeline) */
 void video_seek(double sec) { if (sec < 0) sec = 0; pthread_mutex_lock(&mu); S.pos = sec; posAt = SDL_GetTicks() / 1000.0; hold_on(); pthread_mutex_unlock(&mu); seekTarget = sec; seekAt = SDL_GetTicks() + 350; }

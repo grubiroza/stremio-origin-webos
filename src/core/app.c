@@ -958,6 +958,10 @@ static void amb_bake(void);
 /* back in front after being behind another app (core/away.c): its time away is not the remote resting (the app's own
    screen saver would come at once), and the other app may have set the panel's rate */
 void app_back_in_front(void) { lastIn = SDL_GetTicks() / 1000.0; app_pace_again(); }
+/* domar: the focus is back from something of the TV's that lay over the app, its own screen saver above all. The app's
+   own screen saver, still on under it, goes with it: the key (or the move of the remote) that ended the TV's is never
+   passed on to the app, so a second one was needed for the app's */
+void app_woken(void) { if (saver_on()) { saver_stop(); fprintf(stderr, "[screensaver] off: the app has the focus again\n"); } lastIn = SDL_GetTicks() / 1000.0; }
 /* behind another app (core/away.c): nothing drawn, only what must go on, ten times a second: the TV's messages, a
    phone, Trakt, the library, the film's own state (paused for it) */
 void app_tick_behind(float dt) {

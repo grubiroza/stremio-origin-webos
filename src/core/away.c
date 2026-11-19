@@ -21,7 +21,8 @@ static pthread_mutex_t fgMu = PTHREAD_MUTEX_INITIALIZER; /* (on a TV without the
 
 int app_focused(void) { return !unfocused; }
 int app_behind(void) { return behind; }
-void away_focus(int l) { if (l < 0) unfocused = 1; else if (l > 0) unfocused = 0; }
+static volatile int woke; /* domar: the focus came back (seen on the next frame, away_tick) */
+void away_focus(int l) { if (l < 0) unfocused = 1; else if (l > 0) { unfocused = 0; woke = 1; } }
 
 /* {"appId":"com.webos.app.home", ...}, or {"returnValue":false, ...} when refused */
 static void on_fg(const char *p, void *ud) {
@@ -35,6 +36,7 @@ static void on_fg(const char *p, void *ud) {
   else fprintf(stderr, "[life] in front: %s\n", F.fg[0] ? F.fg : "(none)");
 }
 void away_tick(void) {
+  if (woke) { woke = 0; extern void app_woken(void); app_woken(); } /* domar */
   if (!F.asked && app_splash_done && !unfocused) { F.asked = 1; /* (once, after the start, while in front) */
     const char *a = getenv("APPID"); snprintf(F.own, sizeof F.own, "%s", a && *a ? a : "tv.stremioorigin.app");
     F.sub = plat_luna_subscribe("luna://com.webos.applicationManager/getForegroundAppInfo", "{\"subscribe\":true}", on_fg, NULL); }
