@@ -830,6 +830,7 @@ static struct { int on; float x, y; Hit hv; int hasHv; float hx, hy; double move
 static void ptr_show(void) { PTR.arrowHid = 0; PTR.activeAt = NOW; if (PTR.tvHid) { PTR.tvHid = 0; plat_pointer_visible(1); } if (PTR.on) return; PTR.on = 1; PTR.hasHv = 0; }
 static void ptr_hide(void) { if (!PTR.on) return; PTR.on = 0; PTR.hasHv = 0; }
 static void ptr_put_away(void) { int was = PTR.on; ptr_hide(); if (was && !PTR.tvHid) { PTR.tvHid = 1; plat_pointer_visible(0); } } /* the TV's own pointer too, as its own apps do (the app's state alone left it on screen) */
+int app_pointer_on(void) { return PTR.on; } /* domar: the pointer is out (the player's menus show what it is over) */
 void app_pointer_rest(void) { if (PTR.on && !PTR.down) ptr_put_away(); } /* the film's controls faded by themselves: the pointer goes with them */
 #define PTR_IDLE 5.0 /* a hand held still this long: the pointer goes away, as on the TV's own screens */
 static void ptr_idle(void) { if (PTR.on && !PTR.down && NOW - PTR.activeAt > PTR_IDLE) ptr_put_away(); } /* (never while a press is held: a long press, the seek bar dragged) */

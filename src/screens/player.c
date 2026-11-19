@@ -1157,6 +1157,15 @@ static void build_btns(void) {
   x = SB_W - 72; for (int k = i - 1; k >= P.nL; k--) { x -= P.btns[k].w; P.btns[k].x0 = x; P.btns[k].y = SB_H - 54 - 94 + 8; x -= 18; }
   for (int k = 0; k < i; k++) { P.btns[k].x = P.btns[k].x0 + P.btns[k].dx.v; }
 }
+/* domar: what the pointer is over in an open menu (a tab, a line, a card, a stream), with a look of its own: a white
+   ring and a lighter plate. The focus does follow the pointer there, but its plate is pale, and a tab gave no sign at
+   all that it can be clicked. Gone when the pointer leaves, is put away, or the menu changes */
+static struct { int kind, a, b, tray, hit; Mo f; } HV; /* kind: 0 none, 1 tab a, 2 column a's line b, 3 card a, 4 stream row a */
+static struct { int kind, a, b, tray; } HF; /* the line, card or stream the pointer last put the focus on: kept after the pointer moves off it (to a tab, beside the menu, away), until a key moves the focus or the menu changes */
+static void hv_on(int kind, int a, int b) { HV.hit = 1; if (kind >= 2) { HF.kind = kind; HF.a = a; HF.b = b; HF.tray = P.tray.kind; } if (HV.kind == kind && HV.a == a && HV.b == b && HV.tray == P.tray.kind) return; HV.kind = kind; HV.a = a; HV.b = b; HV.tray = P.tray.kind; mo_set(&HV.f, 0); mo_to(&HV.f, 1, .14f, C_OUT, 0); }
+static float hv_at(int kind, int a, int b) { extern int app_pointer_on(void); return HV.kind == kind && HV.a == a && HV.b == b && HV.tray == P.tray.kind && P.mode == 2 && app_pointer_on() ? HV.f.v : 0; }
+static int hv_is(int kind, int a, int b) { return HF.kind == kind && HF.a == a && HF.b == b && HF.tray == P.tray.kind; } /* the focus still sits where the pointer put it (wherever the pointer is now): the list is not moved under it */
+static void hv_ring(float x, float y, float w, float h, float r, float k, int plate) { if (k <= 0.001f) return; if (plate) gfx_rrect(x, y, w, h, r, WHITE_A((int)(plate * k))); gfx_ring(x, y, w, h, r, 2, WHITE_A((int)(170 * k))); }
 static int btn_index(const char *id) { for (int i = 0; i < P.nbtn; i++) if (!strcmp(P.btns[i].id, id)) return i; return -1; }
 
 /* ---- OSD ---- */
@@ -1671,7 +1680,7 @@ static void render_tray(int fresh) {
   tm_after();
 }
 static int subTab; /* the subtitle tab last used (kept while the app runs) */
-static void open_tray(int kind) {
+static void open_tray(int kind) { HV.kind = 0; HF.kind = 0;
   if (kind != 2 && kind != 5) srcs_free(); else { mo_set(&SR.y, 0); mo_set(&SR.plA, 0); P.tray.tab = 0; SR.moved = 0; }
   P.mode = 2; memset(&P.tray.row, 0, sizeof P.tray.row); P.tray.kind = kind; P.tray.idx = -1; P.tray.zone = 0; P.tray.onBtn = 0; P.tray.n = 0; P.tray.ntabs = 0;
   if (kind == 1) P.tray.season = season_of(P.vid);
@@ -1686,7 +1695,7 @@ static void tray_origin(void) { int ak = P.tray.kind < 0 ? -P.tray.kind : P.tray
 static void dly_open(void);
 static void pos_open(void);
 static void style_open(int kind);
-static void close_tray(void) { if (P.tray.kind == 4) subTab = P.tray.tab; P.mode = 1; P.tray.kind = -P.tray.kind; tray_origin(); arm_hide(); }
+static void close_tray(void) { HV.kind = 0; HF.kind = 0; if (P.tray.kind == 4) subTab = P.tray.tab; P.mode = 1; P.tray.kind = -P.tray.kind; tray_origin(); arm_hide(); }
 static void tray_back(void) {
   if (P.tray.onBtn) { close_tray(); return; }
   if (P.tray.zone == 1 && P.tray.idx >= 0) { P.tray.zone = 0; return; }
@@ -2443,7 +2452,7 @@ void player_tick(float dt) {
   if (P.skA.v <= 0.001f && !P.skOn) RL.key[0] = 0; /* the pill gone: its next time shows at once */
   for (size_t i = 0; i < sizeof mo / sizeof *mo; i++) mo_tick(mo[i], dt);
   for (int i = 0; i < 4; i++) { mo_tick(&P.tray.colY[i], dt); mo_tick(&P.tray.plY[i], dt); mo_tick(&P.tray.plA[i], dt); }
-  for (int i = 0; i < P.nbtn; i++) { mo_tick(&P.btns[i].dx, dt); P.btns[i].x = P.btns[i].x0 + P.btns[i].dx.v; }
+  for (int i = 0; i < P.nbtn; i++) { mo_tick(&P.btns[i].dx, dt); P.btns[i].x = P.btns[i].x0 + P.btns[i].dx.v; } mo_tick(&HV.f, dt);
   nudge_tick(&P.nudge, dt);
   if (P.tray.kind < 0 && !P.tray.openA.on && P.tray.openA.v <= 0.001f) { P.tray.kind = 0; cols_clear(); srcs_free(); } /* put away: its lists go too */
   mo_tick(&SR.y, dt); mo_tick(&SR.plY, dt); mo_tick(&SR.plH, dt); mo_tick(&SR.plA, dt); tm_tick(dt); tray_swap_step(); src_tick(dt);
@@ -2998,7 +3007,7 @@ static void draw_card(TItem *it, float x, float y, float w, float h, int f) {
    focus; an addon whose header comes into view is asked then */
 static void draw_srcs(float ix, float top, float W) {
   (void)W; float RW = SRC_RW, vx = ix + 30, vy = top + 8, vh = SRC_VH; int fi = !P.tray.onBtn && P.tray.kind > 0 && P.tray.zone == 0 && src_focusable(SR.idx) ? SR.idx : -1;
-  float want = 0; if (src_focusable(SR.idx)) { want = SR.r[SR.idx].y - 120; float mx = SR.tot - 10 - vh; if (want > mx) want = mx; if (want < 0) want = 0; } mo_to(&SR.y, want, .28f, C_OUT, 0);
+  float want = 0; if (src_focusable(SR.idx)) { want = SR.r[SR.idx].y - 120; float mx = SR.tot - 10 - vh; if (want > mx) want = mx; if (want < 0) want = 0; } if (hv_is(4, SR.idx, 0)) want = SR.y.to; /* domar: a stream the pointer put the focus on stays under the pointer: the list does not move it to its usual place and away */ mo_to(&SR.y, want, .28f, C_OUT, 0);
   PG.src = 1; PG.srcX = vx; PG.srcTop = vy;
   if (fi >= 0) { SRow *r = &SR.r[fi]; if (SR.plA.v <= 0.001f && !SR.plA.on) { mo_set(&SR.plY, r->y); mo_set(&SR.plH, r->h); } else { mo_to(&SR.plY, r->y, .26f, C_OUT, 0); mo_to(&SR.plH, r->h, .26f, C_OUT, 0); } mo_to(&SR.plA, 1, .18f, C_EASE, 0); }
   else mo_to(&SR.plA, 0, .18f, C_EASE, 0);
@@ -3018,6 +3027,7 @@ static void draw_srcs(float ix, float top, float W) {
       const Stream *st = &P.srcs.g[r->g].items[r->i]; const BestFacts *bf = &P.srcs.g[r->g].f[r->i]; int on = r->g == srcPG && r->i == srcPI;
       if (bf->out && !f) gfx_opacity_push(0.5f);
       if (!f) gfx_rrect(0, y, RW, h, 20, WHITE_A(11)); if (on && !f && r->k != 6) gfx_ring(0, y, RW, h, 20, 2, acc_a(0.7f));
+      hv_ring(0, y, RW, h, 20, f ? hv_at(4, i, 0) : 0, 14); /* (domar: only while the focus is still the pointer's: the wheel or a key moved it on) */
       float l1 = y + 16 + (SN_LH - LN) / 2, l2 = y + 16 + SN_LH + 4 + (SD_LH - LD) / 2, right = RW - 22;
       if (on && r->k != 6) { float nw; const char *now = playing_tag(&nw); gfx_rrect(right - nw, y + 16 + SN_LH / 2 - (8 + text_line_height(20)) / 2, nw, 8 + text_line_height(20), 11, ACC); text_draw(now, right - nw + 13, y + 16 + SN_LH / 2 - (8 + text_line_height(20)) / 2 + 4, 20, 800, ACC_FG, 1, 0, ALIGN_LEFT); right -= nw + 16; }
       const char *nm = st->name[0] ? st->name : st->addon; char first[200]; { const char *e = strchr(nm, '\n'); snprintf(first, sizeof first, "%.*s", e ? (int)(e - nm) : (int)strlen(nm), nm); }
@@ -3068,7 +3078,7 @@ static void draw_tray(void) {
     float vw = W - 2 - 60, xt[40], tx = 0; for (int i = 0; i < P.tray.ntabs; i++) { xt[i] = tx; tx += tabW[i] + TAB_GAP; }
     float want = 0; if (P.tray.tab < P.tray.ntabs) { want = xt[P.tray.tab] + tabW[P.tray.tab] / 2 - vw / 2; if (want > tabsW - vw) want = tabsW - vw; if (want < 0) want = 0; } mo_to(&P.tray.tabsX, want, .25f, C_EASE, 0); /* the chosen tab stays in view */
     float bh = 28 + text_line_height(TAB_FS); gfx_clip_push(ix + 30, cy - 4, vw, bh + 8);
-    for (int i = 0; i < P.tray.ntabs; i++) { float bx = ix + 30 + xt[i] - P.tray.tabsX.v; gfx_rrect(bx, cy, tabW[i], bh, bh / 2, WHITE_A(16)); gfx_ring(bx, cy, tabW[i], bh, bh / 2, 1.5f, WHITE_A(46)); } /* every tab its own pill: plainly something to choose */
+    for (int i = 0; i < P.tray.ntabs; i++) { float bx = ix + 30 + xt[i] - P.tray.tabsX.v; gfx_rrect(bx, cy, tabW[i], bh, bh / 2, WHITE_A(16)); gfx_ring(bx, cy, tabW[i], bh, bh / 2, 1.5f, WHITE_A(46)); if (i != P.tray.tab) hv_ring(bx, cy, tabW[i], bh, bh / 2, hv_at(1, i, 0), 30); } /* every tab its own pill: plainly something to choose */ /* (domar: the one under the pointer lit) */
     /* one pill under the chosen tab, gliding from tab to tab; lit with the accent while the tabs have the focus */
     if (P.tray.tab < P.tray.ntabs) { int tf = P.tray.zone == 1 && !P.tray.onBtn && P.tray.kind > 0;
       if (!TM.tabSeen) { mo_set(&TM.tabX, xt[P.tray.tab]); mo_set(&TM.tabW, tabW[P.tray.tab]); mo_set(&TM.tabF, tf); TM.tabSeen = 1; }
@@ -3100,7 +3110,7 @@ static void draw_tray(void) {
       if (col->vl[0]) { const char *v2 = um_upper(&colU[c][1], col->vl); float va = TM.vkC == c && !strcmp(TM.vkU, "dly") ? TM.vkA.v : 1; text_draw(v2, colX + CP - 28, colTop + 12 + 6 * (1 - va), 21, 800, WHITE_A((int)(255 * va)), 0.5f, 0, ALIGN_RIGHT); }
       float clTop = colTop + 6 + 6 + L18 + 14, cinX = colX + 10 + 4, cinY = clTop + 2; int cn = col->n < 300 ? col->n : 300; float iy = 0, ys[300], hh[300];
       for (int i = 0; i < cn; i++) { ys[i] = iy; hh[i] = col_item_h(&col->items[i]); iy += hh[i] + (col->items[i].k == 0 ? 0 : 10); }
-      int fi = P.tray.r[c]; if (fi >= cn) fi = -1; float want = 0; if (fi >= 0 && iy > COL_LH - 4) { want = ys[fi] - COL_LH / 2 + hh[fi] / 2; if (want > iy - (COL_LH - 4)) want = iy - (COL_LH - 4); if (want < 0) want = 0; } mo_to(&P.tray.colY[c], -want, .25f, C_EASE, 0);
+      int fi = P.tray.r[c]; if (fi >= cn) fi = -1; float want = 0; if (fi >= 0 && iy > COL_LH - 4) { want = ys[fi] - COL_LH / 2 + hh[fi] / 2; if (want > iy - (COL_LH - 4)) want = iy - (COL_LH - 4); if (want < 0) want = 0; } if (fi >= 0 && hv_is(2, c, fi)) want = -P.tray.colY[c].to; /* domar: a line the pointer put the focus on stays under the pointer: the list does not centre it and slide it away (each small move of the hand scrolled the list) */ mo_to(&P.tray.colY[c], -want, .25f, C_EASE, 0);
       PG.colX[c] = cinX + 6; PG.colW = CPW; PG.colTop = clTop; PG.colBot = clTop + COL_LH; PG.nit[c] = cn; for (int i = 0; i < cn; i++) { PG.itY[c][i] = cinY + P.tray.colY[c].v + ys[i]; PG.itH[c][i] = hh[i]; }
       gfx_clip_push(colX + 10, clTop, CP - 30, COL_LH); gfx_offset_push(cinX, cinY + P.tray.colY[c].v);
       int lfa = TM.colA[c].v < 0.999f; if (lfa) { gfx_opacity_push(TM.colA[c].v); gfx_offset_push(0, 10 * (1 - TM.colA[c].v)); } /* what it lists changed: it fades in */
@@ -3113,6 +3123,7 @@ static void draw_tray(void) {
         if (it->k == 1) { ph_box(6, yy, CPW, 58, 20); continue; } /* still being found: the waiting look */
         if (it->grey) gfx_opacity_push(0.38f); /* (what these subtitles can't take) */
         if (!f) gfx_rrect(6, yy, CPW, h, 20, WHITE_A(18));
+        hv_ring(6, yy, CPW, h, 20, f ? hv_at(2, c, i) : 0, 20); /* (domar: only while the focus is still the pointer's) */
         float tx = 6 + (it->tool ? 18 : 14); if (!it->tool) { if (it->spin) { float cx = tx + 12, cy = yy + h / 2; gfx_ring(cx - 11, cy - 11, 22, 22, 11, 3, WHITE_A(51)); float ph = clock_ph(0.9) * 6.2832f; for (int q = 0; q <= 8; q++) { float an = ph - 2.356f + 1.5708f * q / 8; gfx_circle(cx + cosf(an) * 9.5f, cy + sinf(an) * 9.5f, 1.5f, ACC2); } } /* chosen, its lines still loading: the notes' spinner in place of the tick */
           else if (item_on(it)) icon_draw("check", tx + 1, yy + h / 2 - 11, 22, col_alpha(ACC2, i == TM.onIdx[c] ? TM.chkA[c].v : 1)); tx += 24 + 12; }
         /* a value that cycles: its dots under it, the lit one gliding along; a value just changed fades up */
@@ -3132,7 +3143,7 @@ static void draw_tray(void) {
   else if (srcs) draw_srcs(ix, lstTop, W);
   else { /* a row: the focused card second from the left, a lit plate (and an accent line) behind it */
     gfx_clip_push(ix, lstTop, W - 2, listH + 16);
-    float want = P.tray.idx > 0 && P.tray.idx < P.tray.n ? 30 + xs[P.tray.idx - 1] - 8 : 0, mx = 60 + rowW - (W - 2); if (want > mx) want = mx; if (want < 0) want = 0; mo_to(&P.tray.rowX, want, .3f, C_OUT, 0);
+    float want = P.tray.idx > 0 && P.tray.idx < P.tray.n ? 30 + xs[P.tray.idx - 1] - 8 : 0, mx = 60 + rowW - (W - 2); if (want > mx) want = mx; if (want < 0) want = 0; if (hv_is(3, P.tray.idx, 0)) want = P.tray.rowX.to; /* domar: a card the pointer put the focus on stays under the pointer */ mo_to(&P.tray.rowX, want, .3f, C_OUT, 0);
     float ox = ix - P.tray.rowX.v, oy = lstTop + 8;
     PG.nrow = P.tray.n; PG.rowY = oy; PG.rowH = rowH; for (int i = 0; i < P.tray.n; i++) { PG.rowX[i] = ox + 30 + xs[i]; PG.rowW[i] = ws[i]; }
     int fi = P.tray.zone == 0 && !P.tray.onBtn ? P.tray.idx : -1;
@@ -3141,7 +3152,7 @@ static void draw_tray(void) {
     gfx_offset_push(ox, oy);
     if (P.tray.ringA.v > 0.001f && P.tray.ringW) { float rx = P.tray.ringX.v, rw = P.tray.ringW, rh = P.tray.ringH; gfx_opacity_push(P.tray.ringA.v); gfx_rrect(rx, 0, rw, rh, 20, WHITE_A(33)); gfx_rrect(rx + rw * 0.22f, rh + 5, rw * 0.56f, 4, 2, ACC2); gfx_opacity_pop(); }
     int rf = TM.rowA.v < 0.999f; if (rf) { gfx_opacity_push(TM.rowA.v); gfx_offset_push(0, 10 * (1 - TM.rowA.v)); } /* what it lists changed: it fades in */
-    for (int i = 0; i < P.tray.n; i++) { if (30 + xs[i] - P.tray.rowX.v > W || 30 + xs[i] + ws[i] - P.tray.rowX.v < 0) continue; draw_card(&P.tray.row[i], 30 + xs[i], 0, ws[i], hs[i], i == fi); }
+    for (int i = 0; i < P.tray.n; i++) { if (30 + xs[i] - P.tray.rowX.v > W || 30 + xs[i] + ws[i] - P.tray.rowX.v < 0) continue; draw_card(&P.tray.row[i], 30 + xs[i], 0, ws[i], hs[i], i == fi); hv_ring(30 + xs[i], 0, ws[i], hs[i], 20, i == fi ? hv_at(3, i, 0) : 0, 0); /* (domar) */ }
     if (rf) { gfx_offset_pop(); gfx_opacity_pop(); }
     gfx_offset_pop(); gfx_clip_pop(); }
   if (sw) { gfx_offset_pop(); gfx_opacity_pop(); }
@@ -3207,28 +3218,31 @@ static void ptr_hv(int on, float x) {
   double d = dur(); on = on && d > 0; if (on) { float tx = 72 + 132 + 20, tw = SB_W - 2 * 72 - 2 * (132 + 20), p = (x - tx) / tw; P.hvP = p < 0 ? 0 : p > 1 ? 1 : p; }
   P.hvOn = on;
 }
-static void ptr_tray(float x, float y, int down) {
+static void ptr_tray_in(float x, float y, int down) {
   for (int i = 0; i < PG.ntab && i < P.tray.ntabs; i++) if (in_box(x, y, PG.tabX[i], PG.tabY, PG.tabW[i], PG.tabH) && x >= PG.x && x <= PG.x + PG.w) {
-    if (down && i != P.tray.tab) { tray_tab(i); P.tray.zone = 1; }
+    hv_on(1, i, 0);
+    if (down && i != P.tray.tab) { tray_tab(i); P.tray.zone = 1; HF.kind = 0; }
+    else if (i == P.tray.tab && (P.tray.zone != 1 || P.tray.onBtn)) { P.tray.zone = 1; P.tray.onBtn = 0; } /* domar: over the chosen tab the focus goes to the tabs, as it goes to a line pointed at */
     return; }
   if (PG.src && src_tray()) { if (y < PG.srcTop || y > PG.srcTop + SRC_VH || x < PG.srcX || x > PG.srcX + SRC_RW) return; float ly = y - PG.srcTop + SR.y.v;
-    for (int i = 0; i < SR.n; i++) if (ly >= SR.r[i].y && ly <= SR.r[i].y + SR.r[i].h) { if (!src_focusable(i)) return; if (SR.idx != i || P.tray.onBtn || P.tray.zone != 0) { SR.idx = i; SR.moved = 1; P.tray.onBtn = 0; P.tray.zone = 0; } if (down) src_choose(i); return; }
+    for (int i = 0; i < SR.n; i++) if (ly >= SR.r[i].y && ly <= SR.r[i].y + SR.r[i].h) { if (!src_focusable(i)) return; hv_on(4, i, 0); if (SR.idx != i || P.tray.onBtn || P.tray.zone != 0) { SR.idx = i; SR.moved = 1; P.tray.onBtn = 0; P.tray.zone = 0; } if (down) src_choose(i); return; }
     return; }
   if (P.tray.ncols) {
     for (int c = 0; c < P.tray.ncols; c++) if (x >= PG.colX[c] && x <= PG.colX[c] + PG.colW) {
       if (y < PG.colTop || y > PG.colBot) return;
       for (int i = 0; i < PG.nit[c] && i < P.tray.cols[c].n; i++) if (y >= PG.itY[c][i] && y <= PG.itY[c][i] + PG.itH[c][i]) {
-        TItem *it = &P.tray.cols[c].items[i]; if (!focusable(it)) return;
-        if (P.tray.c != c || P.tray.r[c] != i || P.tray.onBtn) { P.tray.c = c; P.tray.r[c] = i; P.tray.onBtn = 0; P.tray.zone = 2; }
+        TItem *it = &P.tray.cols[c].items[i]; if (!focusable(it)) return; hv_on(2, c, i);
+        if (P.tray.c != c || P.tray.r[c] != i || P.tray.onBtn || P.tray.zone != 2) { P.tray.c = c; P.tray.r[c] = i; P.tray.onBtn = 0; P.tray.zone = 2; } /* (domar: zone too: the line already the column's own, the focus on the tabs, got no plate) */
         if (down) choose(it); return; }
       return; }
     return; }
   if (y < PG.rowY || y > PG.rowY + PG.rowH || x < PG.x || x > PG.x + PG.w) return;
   for (int i = 0; i < PG.nrow && i < P.tray.n; i++) if (x >= PG.rowX[i] && x <= PG.rowX[i] + PG.rowW[i]) {
-    TItem *it = &P.tray.row[i]; if (!focusable(it)) return;
+    TItem *it = &P.tray.row[i]; if (!focusable(it)) return; hv_on(3, i, 0);
     if (P.tray.idx != i || P.tray.zone != 0 || P.tray.onBtn) { P.tray.idx = i; P.tray.zone = 0; P.tray.onBtn = 0; }
     if (down) choose(it); return; }
 }
+static void ptr_tray(float x, float y, int down) { HV.hit = 0; ptr_tray_in(x, y, down); if (!HV.hit) HV.kind = 0; } /* (domar: over nothing: no hover) */
 /* domar (#95): the focused button is a pill, its name beside the icon, and all of the pill takes the pointer. The icon
    alone did: a click on the name found no button and fell through to the picture (play / pause). In the right group
    the pill grows to the left (the button itself slides by -lw, the name ends where the icon stood); in the left group
@@ -3253,6 +3267,7 @@ void player_ptr(int type, float x, float y) {
     return; }
   if (P.mode == 2) {
     if (PG.tray && in_box(x, y, PG.x, PG.y, PG.w, PG.h)) { ptr_tray(x, y, down); return; }
+    HV.kind = 0; /* (domar: beside the menu) */
     if (down) { int ak = P.tray.kind < 0 ? -P.tray.kind : P.tray.kind, ob = btn_index(ak == 1 || ak == 5 ? "eps" : ak == 6 ? "chn" : ak == 2 ? "src" : ak == 3 ? "aud" : "subs"); close_tray();
       if (onBtns) for (int i = 0; i < P.nbtn; i++) if (i != ob && x >= P.btns[i].x && x <= P.btns[i].x + P.btns[i].w) { P.row = 0; P.bIdx = i; act(P.btns[i].id); break; } }
     return; }
