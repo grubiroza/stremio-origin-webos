@@ -842,25 +842,24 @@ static void ptr_settle(double now) { if (!PTR.hasHv) return; const Hit *h = hit_
   /* the element is looked up by identity among this frame's rectangles */
   extern const Hit *hit_find(const Hit *like); const Hit *e = hit_find(&PTR.hv); (void)h; if (e) { found = 1; cx = e->x + e->w / 2; cy = e->y + e->h / 2; }
   if (!found) { PTR.movedAt = now; PTR.hasHv = 0; return; } if (fabsf(cx - PTR.hx) > 3 || fabsf(cy - PTR.hy) > 3) PTR.movedAt = now; PTR.hx = cx; PTR.hy = cy; }
-/* during playback the remote is a plain remote: the pointer neither shows nor points, a click is OK (most viewers asked
-   for it: a hand resting on the remote moved the controls about) */
-static double ptrHushAt;
-static void ptr_hush(void) { PTR.on = 0; PTR.hasHv = 0; if (!PTR.tvHid || NOW - ptrHushAt > 1) { ptrHushAt = NOW; PTR.tvHid = 1; plat_pointer_visible(0); } }
-static void ptr_frame(void) { if (player_open()) { if (PTR.on) ptr_hush(); PTR.dirty = 0; return; } if (!PTR.on || !PTR.dirty) return; PTR.dirty = 0; double now = NOW;
+/* domar (#95): the pointer works during playback too, as in 1.0.0 (1.1.0 made the remote a plain remote there: no
+   pointer, a click is OK). Moving it brings the controls, it points at a button, the bar or a menu's line, and a click
+   does what it points at (player_ptr) */
+static void ptr_frame(void) { if (!PTR.on || !PTR.dirty) return; PTR.dirty = 0; double now = NOW; if (player_open()) { extern void player_ptr(int type, float x, float y); player_ptr(0, PTR.x, PTR.y); return; }
   if (PTR.down) return; /* pressed: a hand's tremble must not move the press onto the next card */
   ptr_settle(now); const Hit *d = hit_at(PTR.x, PTR.y);
   if (topNav.active && !(d && d->nav)) ptr_nav_back();
   if (!d || !d->focus || (PTR.hasHv && hit_same(d, &PTR.hv))) return;
   if (PTR.movedAt && now - PTR.movedAt < PTR_SETTLE) { PTR.dirty = 1; return; } /* the page is still moving under the pointer */
   d->focus(d->a, d->b); ptr_keep(d); }
-void app_pointer_move(float x, float y) { if (x == PTR.x && y == PTR.y) return; PTR.x = x; PTR.y = y; if (player_open()) { ptr_hush(); return; } if (ptr_tremor(NOW)) return; ptr_show(); idle_touch_by("pointer moved"); PTR.dirty = 1; }
+void app_pointer_move(float x, float y) { if (x == PTR.x && y == PTR.y) return; PTR.x = x; PTR.y = y; if (ptr_tremor(NOW)) return; ptr_show(); idle_touch_by("pointer moved"); PTR.dirty = 1; }
 void app_pointer_button(int down, float x, float y) {
   double now = NOW; PTR.x = x; PTR.y = y;
   if (saver_on()) return; /* the screensaver covers the page: nothing under it is pressed */
   if (down) { ptr_show(); idle_touch();
     if (PTR.okKeyAt && now - PTR.okKeyAt < PTR_DEDUPE) { PTR.eatUp = 1; return; } /* the OK key of this same press came first */
     PTR.clickAt = now;
-    if (player_open()) { ptr_hush(); PTR.down = 4; key_core(K_OK, 1, 0); return; } /* playing: a click is OK */
+    if (player_open()) { extern void player_ptr(int type, float x, float y); PTR.down = 2; player_ptr(1, x, y); return; } /* playing: the click is the player's (released: player_ptr(2), below) */
     const Hit *d = hit_at(x, y); if (!d) return;
     if (d->act) { PTR.down = 3; PTR.act = *d; return; }
     if (d->shield || !d->focus) return;
@@ -875,7 +874,7 @@ void app_pointer_button(int down, float x, float y) {
 }
 /* the wheel = the Up/Down arrows (Left/Right for a sideways wheel), one per notch; it leaves the pointer out */
 void app_pointer_wheel(float dx, float dy) { double now = NOW; if (saver_on()) return; if (now - PTR.wheelAt < PTR_WHEEL || (!dx && !dy)) return; PTR.wheelAt = now; idle_touch(); int k = dy > 0 ? K_UP : dy < 0 ? K_DOWN : dx > 0 ? K_RIGHT : K_LEFT; key_core(app_mirror_key(k), 1, 0); key_core(k, 0, 0); }
-void app_pointer_system(int show) { if (!show) { ptr_hide(); return; } if (player_open()) { ptr_hush(); return; } if (PTR.arrowHid) return; ptr_show(); }
+void app_pointer_system(int show) { if (!show) { ptr_hide(); return; } if (PTR.arrowHid) return; ptr_show(); }
 void app_key(int k, int down, int repeat) {
   if (k == K_CURSOR_SHOW || k == K_CURSOR_HIDE) { if (down) app_pointer_system(k == K_CURSOR_SHOW); return; } /* a notice from the TV, not a key */
   if (k == K_INFO) { if (down && !repeat) { int on = strcmp(store_get("nerdStats", "false"), "true") != 0; store_set("nerdStats", on ? "true" : "false"); toast(on ? T("Stats for nerds on") : T("Stats for nerds off"), 1500, NULL); fprintf(stderr, "[app] Info: stats for nerds %s\n", on ? "on" : "off"); } return; } /* (the remote's Info key, wherever you are) */

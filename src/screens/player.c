@@ -3218,6 +3218,17 @@ static void ptr_tray(float x, float y, int down) {
     if (P.tray.idx != i || P.tray.zone != 0 || P.tray.onBtn) { P.tray.idx = i; P.tray.zone = 0; P.tray.onBtn = 0; }
     if (down) choose(it); return; }
 }
+/* domar (#95): the focused button is a pill, its name beside the icon, and all of the pill takes the pointer. The icon
+   alone did: a click on the name found no button and fell through to the picture (play / pause). In the right group
+   the pill grows to the left (the button itself slides by -lw, the name ends where the icon stood); in the left group
+   to the right (the buttons after it slide by +lw). Taken from the sliding values, so it follows the pill as it moves.
+   The last button of the left group stays as it was: nothing beside it tells where its pill ends, and a miss there is
+   only play / pause */
+static float btn_ptr_w(int i) {
+  float w = P.btns[i].w; if (i != P.bIdx) return w;
+  if (i >= P.nL) return w - P.btns[i].dx.v;
+  return i + 1 < P.nL ? w + P.btns[i + 1].dx.v : w;
+}
 void player_ptr(int type, float x, float y) {
   if (!P.open || P.closing || !P.live) return; /* the art is up (resolving): nothing to point at */
   float L25 = text_line_height(25), barTop = SB_H - 54 - 94 - 30 - L25; /* the bar's row, its times included (the track alone is a few pixels high) */
@@ -3239,7 +3250,7 @@ void player_ptr(int type, float x, float y) {
     else for (int i = 0; i < PG.npr && i < P.prompt.nbtn; i++) if (in_box(x, y, PG.prX[i], PG.prY[i], PG.prW[i], PG.prH[i])) pi = i;
     if (pi >= 0) { if (P.mode != 3 || P.prompt.idx != pi) { if (P.mode == 0) show_osd(1); P.mode = 3; P.prompt.idx = pi; } ptr_hv(0, x); if (down) prompt_go(pi); return; } }
   if (P.mode == 0 || P.mode == 3) { if (P.mode == 3) P.mode = 0; show_osd(1); } else arm_hide(); /* moving brings the controls */
-  if (onBtns) for (int i = 0; i < P.nbtn; i++) if (x >= P.btns[i].x && x <= P.btns[i].x + P.btns[i].w) { if (P.row != 0 || P.bIdx != i) { P.row = 0; P.bIdx = i; } ptr_hv(0, x); if (down) act(P.btns[i].id); return; }
+  if (onBtns) for (int i = 0; i < P.nbtn; i++) if (x >= P.btns[i].x && x <= P.btns[i].x + btn_ptr_w(i)) { if (P.row != 0 || P.bIdx != i) { P.row = 0; P.bIdx = i; } ptr_hv(0, x); if (down) act(P.btns[i].id); return; }
   if (onBar) { if (P.row != 1) P.row = 1; ptr_hv(1, x); if (down) P.barDown = 1; return; } /* the bar, its times included */
   ptr_hv(0, x);
   if (down) { if (P.seekT >= 0) commit_ok(); else toggle(); show_osd(1); } /* the picture: play / pause */
