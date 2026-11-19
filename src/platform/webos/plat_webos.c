@@ -161,8 +161,10 @@ const char *plat_ui_locale(void) {
   fprintf(stderr, "[i18n] TV language: %s\n", loc[0] ? loc : "(no answer)");
   return loc[0] ? loc : NULL;
 }
-void plat_pointer_visible(int on) { /* SDL's own cursor call: in every SDL webOS ships (3 included), the TV's cursor shown or hidden for the app's window */
-  int r = SDL_ShowCursor(on ? SDL_ENABLE : SDL_DISABLE); fprintf(stderr, "[ptr] %s (%d)\n", on ? "shown" : "hidden", r);
+void plat_pointer_visible(int on) { /* domar (#89): SDL's own cursor call is NOT made. On webOS 4.x (the TV's SDL 2.0.4) a cursor hidden with
+   SDL_ShowCursor(SDL_DISABLE) never comes back and no movement arrives after it: the Magic Remote's pointer is dead for the rest of the run.
+   The app's own state (PTR.on) is enough; the TV puts its pointer away by itself when the hand rests */
+  int r = 0; fprintf(stderr, "[ptr] %s (%d)\n", on ? "shown" : "hidden", r);
 }
 /* the TV's SDL knows the panel without a system service (a refused systemproperty call leaves 4K sets at 1080p) */
 int plat_panel_lines(void) {
