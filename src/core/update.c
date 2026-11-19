@@ -13,6 +13,7 @@
 #include "core/keys.h"
 #include "core/hit.h"
 #include "platform/plat.h"
+#include "core/video.h"
 #include "screens/settings.h"
 #include "screens/player.h"
 #include "ui/gfx.h"
@@ -309,6 +310,7 @@ void update_pill_draw(float setX) {
 
 void update_tick(float dt) {
   tween_tick(&U.pa, dt); tween_tick(&U.slide, dt); tween_tick(&U.dot, dt); sglass_tick(&U.glass, dt);
+  video_ss_pump(); /* domar: the screen-saver request, from the start (video_webos.c) */
   plat_luna_pump();
   if (U.pf && !topNav.active) { U.pf = 0; U.hideAt = app_now() + 4; } /* the highlight left the top bar */
   if (U.pill && U.hideAt && app_now() >= U.hideAt) pill_hide();

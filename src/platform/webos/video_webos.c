@@ -491,9 +491,15 @@ int video_set_crop(int sx, int sy, int sw, int sh, float dx, float dy, float dw,
   if (have) apply_plane();
   return !noCrop;
 }
-void video_pump(void) {
+/* domar: asked from the app's every frame (update_tick), not only while something plays (video_pump). Until the first
+   film of a run nothing was registered with the power service, so in the menus the TV's own screen saver came over
+   the app after two minutes (webOS 4.5), where the app's own was meant to */
+void video_ss_pump(void) {
   if (ssRefused == 1) { ssRefused = 2; char b[160]; snprintf(b, sizeof b, "{\"subscribe\":true,\"clientName\":\"%s\"}", SB_APP_ID);
     fprintf(stderr, "[video] screen saver requests through the app's luna handle: %s\n", plat_luna_subscribe_app(SS_REGISTER, b, on_screensaver_app, NULL) ? "asked" : "not possible"); }
+}
+void video_pump(void) {
+  video_ss_pump();
   int bind = 0, again = 0, died = 0; double pos = 0; int aud = 0, txt = -1, loaded = 0;
   pthread_mutex_lock(&mu);
   if (S.bindWanted & 1) bind = acb != 0; if (S.bindWanted & 2) again = 1; S.bindWanted = 0;

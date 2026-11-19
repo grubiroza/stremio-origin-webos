@@ -57,4 +57,5 @@ void   video_set_surface(int w, int h);      /* the drawable's size: the plane's
 int    video_audio_unsupported(void);        /* 1 when the TV plays the picture but not this audio track */
 int    video_edge_colors(uint32_t *out4); /* the picture's left, top, right, bottom colours (0xffRRGGBB) when the platform can see its frames; 0 when not (a TV's hardware plane) */
 void   video_pump(void);                     /* delivers the platform's events; call per frame */
+void   video_ss_pump(void);                  /* domar: the TV's screen-saver request asked for as soon as it can be, playing or not; every frame */
 #endif
