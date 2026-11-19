@@ -103,7 +103,7 @@ static void mo_tick(Mo *m, float dt) { if (!m->on) return; m->t += dt; if (m->t 
 static float kf(double at, float dur, const float *c, float delay) { if (!at) return 1; return bez(c, (float)((app_now() - at - delay * ANIM_SPEED) / (dur * ANIM_SPEED))); }
 
 /* ---- state ---- */
-#define MAXBTN 8
+#define MAXBTN 9 /* domar: 8 + "Subtitle delay" (an episode with a next one fills every place) */
 #define MAXROW 64
 typedef struct { int k; /* 0 note 1 skel 2 ep 3 src 4 chip; ls: a subtitle row's list, 1 OpenSubtitles 2 the addons' */ char lb[200], sub[120], ov[300], th[512], vl[48]; int on, spin, tool, hid, grey; int i, ls; const cJSON *v; Stream *st; char u[1024]; float d, hh, ww, vw; uint32_t sw; int vwt; } TItem; /* vwt: the value's weight (0: 700), a font row's in its own font */ /* hh, ww, vw: measured on first draw (items are made fresh, zeroed) */
 typedef struct { char title[64], vl[32]; TItem *items; int n; } TCol;
@@ -1137,7 +1137,7 @@ static void build_btns(void) {
   if (!P.isTrailer && episodic() && P.videos && cJSON_GetArraySize(P.videos)) B("eps", "p_eps", T("Episodes"), 0);
   if (!P.isTrailer && !live_title()) B("src", "p_src", T("Sources"), 0); /* (a channel: the working stream is found for it) */
   if (P.isTrailer) { if (trSubsN) B("cc", "p_subs", T("Subtitles"), 0); } /* a trailer's captions: one press on, one off */
-  else if (!live_title()) B("subs", "p_subs", T("Subtitles"), 0); /* (a live channel: none to choose) */
+  else if (!live_title()) { B("dly", "dly", T("Subtitle delay"), 0); B("subs", "p_subs", T("Subtitles"), 0); } /* (a live channel: none to choose) */ /* domar: "dly" opens the delay card at once (else Subtitles > Style / Delay > Adjust); its icon: assets/icons.domar.json */
   if (!P.isTrailer) B("aud", "p_aud", T("Audio"), 0);
   const char *am = !strcmp(P.aspect, "fill") ? "Fill the screen" : !strcmp(P.aspect, "zoom") ? "Zoom" : "Original"; B("asp", "p_asp", T(am), 0);
   #undef B
@@ -1772,7 +1772,8 @@ static void live_card_draw(void);
    second each), the delay between them, play / pause and Done; the picture and the lines stay in view, so a change is
    seen at once. Back or Done closes it (mode 4) ---- */
 #define DLY_STEP 0.25
-static void dly_open(void) { close_tray(); P.osd = 0; P.mode = 4; P.dlyF = 0; mo_set(&P.dlyR, 0); mo_to(&P.dlyA, 1, .28f, C_OUT, 0); }
+static void dly_card(void) { P.osd = 0; P.mode = 4; P.dlyF = 0; mo_set(&P.dlyR, 0); mo_to(&P.dlyA, 1, .28f, C_OUT, 0); }
+static void dly_open(void) { close_tray(); dly_card(); }
 static void dly_close(void) { P.mode = 0; mo_to(&P.dlyA, 0, .2f, C_EASE, 0); }
 static void dly_change(double d) { double v = P.subDelay + d; v = floor(v / DLY_STEP + 0.5) * DLY_STEP; if (v > 120) v = 120; if (v < -120) v = -120; P.subDelay = fabs(v) < 1e-6 ? 0 : v; P.dlyAt = now_(); }
 static void dly_act(int i) { P.dlyF = i; mo_to(&P.dlyR, (float)i, .18f, C_OUT, 0);
@@ -1809,6 +1810,7 @@ static void hub_from_player(void) { close_tray(); P.osd = 0; P.mode = 6; hub_ope
 static void act(const char *id) {
   if (!strcmp(id, "pp")) toggle(); else if (!strcmp(id, "beg")) from_start(); else if (!strcmp(id, "asp")) next_aspect(); else if (!strcmp(id, "nxt")) next_auto(); else if (!strcmp(id, "cc")) cc_toggle();
   else if (!strcmp(id, "chn")) { hub_from_player(); return; }
+  else if (!strcmp(id, "dly")) { dly_card(); return; } /* domar: the row's own button. Not dly_open(): its close_tray() turns tray.kind over, and a menu still closing would open again */
   else open_tray(!strcmp(id, "eps") ? 1 : !strcmp(id, "src") ? 2 : !strcmp(id, "aud") ? 3 : 4);
   arm_hide();
 }
