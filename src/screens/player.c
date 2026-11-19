@@ -572,15 +572,21 @@ static const cJSON *show_pref(void) { if (!show_prefs_on()) return NULL; cJSON *
 static void show_pref_put(const char *k, const char *v) { /* v NULL: that one forgotten (back to the settings') */
   cJSON *a = store_node("showPrefs"); cJSON *n = cJSON_IsObject(a) ? cJSON_Duplicate(a, 1) : cJSON_CreateObject(); cJSON *o = cJSON_GetObjectItemCaseSensitive(n, P.id); if (!o) { o = cJSON_CreateObject(); cJSON_AddItemToObject(n, P.id, o); }
   cJSON_DeleteItemFromObjectCaseSensitive(o, k); if (v) cJSON_AddStringToObject(o, k, v); if (!cJSON_GetArraySize(o)) cJSON_DeleteItemFromObjectCaseSensitive(n, P.id); store_set_node("showPrefs", n); }
+/* domar: the subtitle picked by hand is kept for a film too (the audio stays as it was: TV shows only), always (also
+   when it is in the settings' language: which addon and which file it was is what got lost), and with the file's own
+   address ("sub"), so the same file comes back, not the first one of that addon */
+static int sub_prefs_on(void) { return !P.isTrailer && P.id[0]; }
+static const cJSON *sub_pref(void) { if (!sub_prefs_on()) return NULL; cJSON *a = store_node("showPrefs"); return cJSON_IsObject(a) ? cJSON_GetObjectItemCaseSensitive(a, P.id) : NULL; }
 static void show_pref_sub(void) { /* the subtitle on now, chosen by hand */
   P.autoSubDone = 1; /* (a list arriving later never overrides it: Off picked while they load stays off) */
-  if (!show_prefs_on()) return; const char *w = want_sub(); char kind[8] = "", lang[24] = "", name[96] = "";
+  if (!sub_prefs_on()) return; const char *w = want_sub(); char kind[8] = "", lang[24] = "", name[96] = "";
   if (!strcmp(P.curSub, "off")) snprintf(kind, sizeof kind, "off");
   else if (!strncmp(P.curSub, "emb:", 4)) { int n = atoi(P.curSub + 4); for (int i = 0; i < P.nEmb; i++) if (P.emb[i].idx == n) { snprintf(kind, sizeof kind, "emb"); snprintf(lang, sizeof lang, "%s", P.emb[i].lang); snprintf(name, sizeof name, "%s", P.emb[i].name); } }
   else if (!strncmp(P.curSub, "ext:", 4)) { snprintf(kind, sizeof kind, "ext"); snprintf(lang, sizeof lang, "%s", P.pick.lang); snprintf(name, sizeof name, "%s", P.pick.addon); }
   if (!kind[0]) return;
-  int asSettings = !strcmp(kind, "off") ? !*w : (*w && lang_match(lang, w)); /* what the settings give anyway: nothing to keep */
+  int asSettings = !strcmp(kind, "off") ? !*w : 0; /* Off where the settings give none: nothing to keep. A track or a file picked by hand: always kept (domar) */
   show_pref_put("sk", asSettings ? NULL : kind); show_pref_put("sl", asSettings ? NULL : lang); show_pref_put("sn", asSettings || !name[0] ? NULL : name);
+  show_pref_put("sub", !asSettings && !strcmp(kind, "ext") && P.pick.list ? P.curSub + 4 : NULL); /* the file itself (an addon's or the built-in list's; not a trailer's captions) */
   fprintf(stderr, "[subs] %s for this show\n", asSettings ? "as the settings say" : "kept");
 }
 /* Settings > Audio's language: "" for Original (the film's own track, left as it starts), else the language to pick */
@@ -594,11 +600,14 @@ static void show_pref_aud(const char *lang, const char *name) {
 static const char *aud_want(void) { const char *al = js_str(show_pref(), "al", NULL); if (al && *al) return al; return aud_setting(); }
 static void auto_sub(void) {
   if (P.autoSubDone || strcmp(P.curSub, "off")) return;
-  const cJSON *sp = show_pref(); const char *pk = js_str(sp, "sk", ""), *pn = js_str(sp, "sn", "");
+  const cJSON *sp = sub_pref(); const char *pk = js_str(sp, "sk", ""), *pn = js_str(sp, "sn", ""), *pu = js_str(sp, "sub", "");
   if (!strcmp(pk, "off")) { P.autoSubDone = 1; return; } /* this show: none, as chosen */
   const char *w = *pk ? js_str(sp, "sl", "") : want_sub(); if (!*w) return;
   again:;
   if (!strcmp(pk, "ext") && (P.nExt || P.nAdx)) { /* this show's file from an addon: the same addon first, the language */
+    if (*pu) for (int any = 0; any < 2; any++) { /* domar: the very file picked last time, when it is in the lists (another episode: it is not, and the addon is what counts). From the source it was picked from when that one lists it: the built-in list and an addon can carry the same file, and its tick sat under whichever answered first */
+      for (int i = 0; i < P.nAdx; i++) if (!strcmp(P.adx[i].url, pu) && (any || !strcmp(P.adx[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; }
+      for (int i = 0; i < P.nExt; i++) if (!strcmp(P.ext[i].url, pu) && (any || !strcmp(P.ext[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(1, &P.ext[i]); sync_auto_arm(); return; } }
     for (int pass = 0; pass < 2; pass++) { if (pass && (*pn ? P.adxLoading : P.extLoading) && !P.sameWaitOver) { if (!P.sameWaitAt) P.sameWaitAt = now_() + 10; return; } /* (any addon's file in that language only once the list that may hold the same addon's is in, or 10 s on) */
       for (int i = 0; i < P.nAdx; i++) if (lang_match(P.adx[i].lang, w) && (pass || !strcmp(P.adx[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; }
       for (int i = 0; i < P.nExt; i++) if (lang_match(P.ext[i].lang, w) && (pass || !strcmp(P.ext[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(1, &P.ext[i]); sync_auto_arm(); return; } }
