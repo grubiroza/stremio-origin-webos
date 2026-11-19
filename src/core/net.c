@@ -487,12 +487,14 @@ static void led_get(NetRange *h, const char *url) { if (h->eff && h->orig && !st
   pthread_mutex_unlock(&ledMu); }
 /* many byte ranges in one request (multipart/byteranges): parts[i] (malloc'd, or NULL when the answer lacked it) and
    plen[i]. NR_NORANGE: the server doesn't answer several ranges at once (a 200, one part, an error for the form) */
-typedef struct { unsigned char *buf; long len, cap, max; int status; char ctype[200]; } MultiCtx;
+typedef struct { unsigned char *buf; long len, cap, max; int status, plain; char ctype[200]; } MultiCtx;
 static size_t multi_hdr(char *p, size_t s, size_t n, void *ud) { MultiCtx *m = ud; size_t l = s * n; char line[512]; size_t k = l < sizeof line - 1 ? l : sizeof line - 1; memcpy(line, p, k); line[k] = 0;
   int code; if (sscanf(line, "HTTP/%*s %d", &code) == 1) { m->status = code; m->ctype[0] = 0; m->len = 0; }
   else if (!strncasecmp(line, "content-type:", 13)) { char *v = line + 13; while (*v == ' ') v++; size_t vl = strcspn(v, "\r\n"); if (vl >= sizeof m->ctype) vl = sizeof m->ctype - 1; memcpy(m->ctype, v, vl); m->ctype[vl] = 0; }
   return l; }
-static size_t multi_data(char *p, size_t s, size_t n, void *ud) { MultiCtx *m = ud; size_t add = s * n; if (m->status != 206) return add; if (m->len + (long)add > m->max) return 0;
+static size_t multi_data(char *p, size_t s, size_t n, void *ud) { MultiCtx *m = ud; size_t add = s * n; if (m->status != 206) return add;
+  if (!strcasestr(m->ctype, "multipart/byteranges")) { m->plain = 1; return 0; } /* domar: a 206 that is not multipart is one part, and with some servers (Real-Debrid) it runs from the first range's start to the end of the file: stopped at its first bytes, not read until the buffer is full */
+  if (m->len + (long)add > m->max) return 0;
   if (m->len + (long)add > m->cap) { long nc = (m->len + (long)add) * 2; if (nc > m->max) nc = m->max; unsigned char *q = realloc(m->buf, nc); if (!q) return 0; m->buf = q; m->cap = nc; } memcpy(m->buf + m->len, p, add); m->len += add; return add; }
 static unsigned char *mem_find(unsigned char *h, long hn, const char *nd, long nn) { for (long i = 0; i + nn <= hn; i++) if (h[i] == (unsigned char)nd[0] && !memcmp(h + i, nd, nn)) return h + i; return NULL; }
 int net_range_multi(NetRange *h, const char *url, const long long *st, const long *ln, int n, unsigned char **parts, long *plen, int *httpStatus, int timeoutMs) {
@@ -510,6 +512,7 @@ int net_range_multi(NetRange *h, const char *url, const long long *st, const lon
     if (direct && !pass && (rc != CURLE_OK || (m.status >= 400 && m.status != 416 && m.status != 429))) { free(m.buf); led_drop(url); free(h->eff); h->eff = NULL; direct = 0; continue; } /* (where the link led stopped answering: through the link again) */
     if (m.status == 429 || m.status == 503) { free(m.buf); free(rg); return NR_BUSY; }
     if (rc == CURLE_OPERATION_TIMEDOUT) { free(m.buf); free(rg); return NR_TIMEOUT; }
+    if (rc == CURLE_WRITE_ERROR && m.status == 206 && m.plain) { free(m.buf); free(rg); return NR_NORANGE; } /* domar: several ranges asked, one plain part answered: this server takes one range at a time. It was counted as a failed read (NR_NET), and five of those switched the seek previews off for the film */
     if (rc != CURLE_OK && !(rc == CURLE_WRITE_ERROR && m.status != 206)) { free(m.buf); free(rg); return NR_NET; }
     const char *bd = strcasestr(m.ctype, "boundary="); if (m.status != 206 || !strcasestr(m.ctype, "multipart/byteranges") || !bd) { free(m.buf); free(rg); return m.status == 206 || m.status == 200 || m.status == 400 || m.status == 416 || m.status == 501 ? NR_NORANGE : m.status >= 400 ? NR_HTTP : NR_NET; }
     char sep[96]; bd += 9; if (*bd == '"') bd++; size_t bl = strcspn(bd, "\";\r\n "); if (bl > 80) bl = 80; snprintf(sep, sizeof sep, "--%.*s", (int)bl, bd);
