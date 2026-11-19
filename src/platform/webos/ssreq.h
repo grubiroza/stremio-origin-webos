@@ -27,7 +27,8 @@ static inline int ssreq_value(const char *p, const char *key, const char **v, si
 /* 1: the screen saver is about to start; *ts its timestamp token to send back (a number, or a string with quotes) */
 static inline int ssreq_active(const char *p, char *ts, size_t cap) {
   const char *v; size_t n;
-  if (!p || !ssreq_value(p, "state", &v, &n) || n != 8 || strncmp(v, "\"Active\"", 8)) return 0;
+  if (!p) return 0;
+  if (ssreq_value(p, "state", &v, &n) && (n != 8 || strncmp(v, "\"Active\"", 8))) return 0; /* domar (#90): webOS 4.x sends the request with no "state" at all (returnValue, timestamp, instantBoot): a state that is there must be Active, a request without one is a request */
   if (!ssreq_value(p, "timestamp", &v, &n) || n + 1 > cap) return 0;
   if (*v != '"') { char tmp[64]; if (n >= sizeof tmp) return 0; memcpy(tmp, v, n); tmp[n] = 0; char *end; strtod(tmp, &end); if (*end) return 0; } /* a number, whole */
   memcpy(ts, v, n); ts[n] = 0; return 1;

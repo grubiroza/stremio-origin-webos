@@ -13,6 +13,7 @@ int main(void) {
   t("tabs and CRLF", "{\r\n\t\"timestamp\":\t99,\r\n\t\"state\":\t\"Active\"\r\n}", 1, "99");
   t("a string timestamp kept with its quotes", "{\"state\": \"Active\", \"timestamp\": \"2026-11-02 10:00\"}", 1, "\"2026-11-02 10:00\"");
   t("a large number kept whole", "{\"state\": \"Active\", \"timestamp\": 98765432109876543210}", 1, "98765432109876543210");
+  t("webOS 4.x: no state, the timestamp a string", "{\"returnValue\": true, \"timestamp\": \"3961.123456789\", \"instantBoot\": false}", 1, "\"3961.123456789\"");
   t("subscription answer (no state)", "{\"returnValue\": true, \"subscribed\": true}", 0, "");
   t("another state", "{\"state\": \"Inactive\", \"timestamp\": 5}", 0, "");
   t("Active only inside a nested object", "{\"x\": {\"state\": \"Active\", \"timestamp\": 1}, \"state\": \"Done\"}", 0, "");
