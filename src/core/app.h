@@ -85,6 +85,8 @@ void  app_card_shake(void);      /* a held card that has no menu (a collection):
 float app_card_shake_dx(void);  /* its offset now (0 when still), for the screens to add to the focused card */
 int  app_key_held(void);               /* the key being handled repeats a held one (screens glide instead of popping) */
 int  app_ok_down(void);                /* OK is held down now (a sheet's own hold reads it) */
+double app_ptr_down_on(void (*act)(int, int), int a); /* domar: the pointer held on the target with that act and number: since when (0: no) */
+double app_ptr_click_at(void);         /* domar: when the pointer's last press began */
 int   app_clock_12(void); /* Settings › Appearance › Clock: 12-hour (3:30 PM) rather than 24-hour (15:30) */
 void  app_fmt_hm(int h, int m, char *out, size_t cap); /* a time of day as that setting says */
 void  app_clock_draw(float right, float y, float alpha); /* the pages' clock, its right edge at x (the player's too) */

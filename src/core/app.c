@@ -911,6 +911,11 @@ static int keyHeld; /* the key being handled is a repeat of a held one */
 int app_key_held(void) { return keyHeld; }
 static int okDown; /* OK is down (a key or the pointer's button) */
 int app_ok_down(void) { return okDown; }
+/* domar: the pointer's button held on a target that acts on release (hit_add with an act): since when, 0 when it is
+   not held or not on that one; and when the last press began. A sheet's own hold reads them, as it reads
+   app_ok_down(): with the cursor out, the Magic Remote's OK is a click, and a click was only ever a tap */
+double app_ptr_down_on(void (*act)(int, int), int a) { return PTR.down == 3 && PTR.act.act == act && PTR.act.a == a ? PTR.clickAt : 0; }
+double app_ptr_click_at(void) { return PTR.clickAt; }
 float app_hold_k(double at) { float x = (float)((NOW - at) * 1000 - 220) / (HOLD_MS - 220); return x < 0 ? 0 : x > 1 ? 1 : x; }
 static void key_core(int k, int down, int repeat) {
   if (down) keyHeld = repeat != 0;

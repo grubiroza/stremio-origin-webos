@@ -52,6 +52,7 @@ static struct {
   /* the best pick: where the focus came to rest (its hint after 3 s), OK held on it, its details panel */
   double restAt; int restKey; int holding, swelled; double holdAt; int info; Tween infoK; QT infoY; float infoH, infoW, infoFrom[4], infoTo[4]; const Stream *infoS; SGlass pglass;
   /* measured once, not per frame: each row's header line (in layout), the chips' words and widths (chipsLaid), the total */
+  double ptrHeldAt; int ptrSw; /* domar: the pointer's press that opened a row's details (its release plays nothing); its hold has sounded */
   char nm[MAXITEMS][600]; int total, chipsLaid; char chLbl[MAXG + 1][120], chCnt[MAXG + 1][12]; float chW[MAXG + 1]; unsigned chLg;
 } S;
 int streams_open(void) { return S.open; }
@@ -96,6 +97,7 @@ static void on_part(StreamGroup *g, int gi, void *ud) { if ((unsigned)(uintptr_t
 static void on_any(int pending, int count, void *ud) { if ((unsigned)(uintptr_t)ud != S.tok) return; S.pend = pending; S.asked = count; } /* (with it, an addon's answer is read whole, not its first 40: add() keeps PER_ADDON) */
 static void on_done(int total, void *ud) { (void)total; if ((unsigned)(uintptr_t)ud != S.tok) return; S.loading = 0; if (S.open) rebuild(); }
 static int key(int k);
+static void item_act(int i, int b);
 static void tick(float dt);
 static void draw(void);
 static Screen *sUnder; /* the overlay the sheet opened over (All channels), given the keys back when it closes */
@@ -249,12 +251,20 @@ static void tick(float dt) {
     else if (app_hold_k(S.holdAt) >= 1) { S.holding = 0; info_open(); }
     else if (!app_ok_down()) { S.holding = 0; play(S.idx); }
     else if (app_hold_k(S.holdAt) > 0 && !S.swelled) { S.swelled = 1; sound_play(SND_HOLD); } }
+  /* domar: the pointer held on a row that has details: as the key's hold. With the cursor out the Magic Remote's OK
+     is a click, a row acts on its release, and a held one did nothing until it was let go (then it played) */
+  { double p0 = S.open && !S.info && S.zone == 0 && S.idx < S.n && (S.kind[S.idx] != R_PLAIN || compact(S.idx)) ? app_ptr_down_on(item_act, S.idx) : 0;
+    if (p0 > 0 && p0 != S.ptrHeldAt) { float hk = app_hold_k(p0); if (hk > 0 && !S.ptrSw) { S.ptrSw = 1; sound_play(SND_HOLD); } if (hk >= 1) { S.ptrHeldAt = p0; S.ptrSw = 0; info_open(); } } else S.ptrSw = 0; }
 }
-static void chip_focus(int i, int b) { (void)b; if (S.zone != 1 || S.chipIdx != i) { S.zone = 1; S.chipIdx = i; } }
-static void chip_act(int i, int b) { (void)b; if (S.filter != S.chips[i]) { S.zone = 1; S.chipIdx = i; S.filter = S.chips[i]; S.idx = 0; rebuild(); } }
-static void item_focus(int i, int b) { (void)b; if (S.zone != 0 || S.idx != i) { S.zone = 0; S.idx = i; } }
-static void item_act(int i, int b) { (void)b; S.zone = 0; S.idx = i; play(i); }
-static void outside_act(int a, int b) { (void)a; (void)b; streams_close(0); } /* beside the sheet: put it away */
+/* (domar: while a row's details are up the pointer moves no focus under them, and a click anywhere puts them away, as a key does) */
+static void chip_focus(int i, int b) { (void)b; if (S.info) return; if (S.zone != 1 || S.chipIdx != i) { S.zone = 1; S.chipIdx = i; } }
+static void chip_act(int i, int b) { (void)b; if (S.info) { info_close(); return; } if (S.filter != S.chips[i]) { S.zone = 1; S.chipIdx = i; S.filter = S.chips[i]; S.idx = 0; rebuild(); } }
+static void item_focus(int i, int b) { (void)b; if (S.info) return; if (S.zone != 0 || S.idx != i) { S.zone = 0; S.idx = i; } }
+static void item_act(int i, int b) { (void)b; if (S.info) { info_close(); return; }
+  if (S.ptrHeldAt && S.ptrHeldAt == app_ptr_click_at()) return; /* (domar: the press that opened its details plays nothing) */
+  S.zone = 0; S.idx = i; play(i); }
+static void info_ptr(int a, int b) { (void)a; (void)b; if (S.info) info_close(); }
+static void outside_act(int a, int b) { (void)a; (void)b; if (S.info) { info_close(); return; } streams_close(0); } /* beside the sheet: put it away */
 /* the small spinner: a quarter turn of the accent on a faint ring */
 static void spinner(float cx, float cy) {
   gfx_ring(cx - 10, cy - 10, 20, 20, 10, 3, acc_a(0.25f)); float ph = (float)fmod(app_now() / 0.8, 1) * 6.2832f;
@@ -301,7 +311,7 @@ static float row_in(int i, int vis, double now, float *dy) {
 static void draw_info(float x0, int rtl) {
   const Stream *s = S.infoS; float k = S.infoK.v, e = clampf(k, 0, 1);
   float px = x0 + lerpf(S.infoFrom[0], S.infoTo[0], e), py = lerpf(S.infoFrom[1], S.infoTo[1], e), pw = lerpf(S.infoFrom[2], S.infoTo[2], e), ph = lerpf(S.infoFrom[3], S.infoTo[3], e);
-  hit_shield(px, py, pw, ph);
+  hit_shield(px, py, pw, ph); if (S.info) hit_act(px, py, pw, ph, info_ptr, 0, 0); /* (domar: a click on the panel puts it away) */
   gfx_shadow(px, py + 14, pw, ph, 20, 46, BLACK_A((int)(120 * e)));
   sglass_draw(&S.pglass, px, py, pw, ph, 20);
   if (e < 1) gfx_rrect(px, py, pw, ph, 20, col_alpha(ACC, 1 - e)); /* (the row's accent, fading as it grows) */
@@ -390,7 +400,8 @@ static void draw(void) {
     }
     if ((S.kind[i] != R_PLAIN || cp) && f) {
       if (ha > 0) key_hint(rtl ? x0 + 24 + nx : x0 + LW - 24 + nx, iy + 18 + ny + NM_LH / 2, K_OK, T("Hold for details"), col_alpha(ACC_FG, 0.8f * ha), !rtl); /* the remote's OK, then what holding it does */
-      float hk = S.holding ? app_hold_k(S.holdAt) : 0; if (hk > 0) hold_trace_draw(x0 + nx, iy + ny, LW, ih, 18, ease_apply(EASE_IN_OUT, hk)); }
+      float hk = S.holding ? app_hold_k(S.holdAt) : 0; { double p0 = app_ptr_down_on(item_act, i); if (p0 > 0 && p0 != S.ptrHeldAt) hk = app_hold_k(p0); } /* (domar: the pointer's hold draws the same line) */
+      if (hk > 0) hold_trace_draw(x0 + nx, iy + ny, LW, ih, 18, ease_apply(EASE_IN_OUT, hk)); }
     if (rdy > 0.01f) gfx_offset_pop(); if (fa < 1) gfx_opacity_pop(); }
   gfx_offset_pop(); gfx_clip_pop();
   if (S.infoK.v > 0.001f && S.infoS) draw_info(x0, rtl);
