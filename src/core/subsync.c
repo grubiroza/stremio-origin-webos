@@ -22,7 +22,7 @@ typedef struct { SyncRef r; float score; } RefCand;
 struct SubSync {
   pthread_mutex_t mu; int refs; volatile int cancel, stage; int done; SyncResult res;
   double center, behind, ahead, range; WLine *x, *r; int nx, nr, total; /* bounded copies: times and hashed words */
-  SubQuery q; char cur[1024], curLang[24]; RefCand *c; int nc, ccap; /* another subtitle as the reference: what to look for */
+  SubQuery q; char cur[SB_SUB_URL], curLang[24]; RefCand *c; int nc, ccap; /* another subtitle as the reference: what to look for */
 };
 static void free_r(SubSync *j) { for (int i = 0; i < j->nr; i++) free(j->r[i].w); j->nr = 0; }
 static void release(SubSync *j) {

@@ -19,7 +19,7 @@ SubSync *subsync_start(const Cue *X, int nx, const SyncLine *R, int nr, double c
    matched on the job's thread (by the file's hash on OpenSubtitles first, then refs: hm / own first, then by how well
    rel matches the file's name; curUrl, the subtitle being synced, is never its own reference). q: the stream (its
    hash is worked out when it can be read in ranges). Logged as [sync]. */
-typedef struct { char url[1024], lang[24], rel[96], from[64]; int hm, own; double fps; } SyncRef;   /* own: the stream carried it; fps: what it was timed for (0 unknown) */
+typedef struct { char url[SB_SUB_URL], lang[24], rel[96], from[64]; int hm, own; double fps; } SyncRef;   /* own: the stream carried it; fps: what it was timed for (0 unknown) */
 SubSync *subsync_start_ref(const Cue *X, int nx, double center, const SubQuery *q, const char *curUrl, const char *curLang, const SyncRef *refs, int nrefs);
 int  subsync_stage(SubSync *j);                   /* 1 while the reference is looked for and read, 0 while matching */
 int  subsync_poll(SubSync *j, SyncResult *out);   /* 1 once answered (out filled), 0 while it runs */

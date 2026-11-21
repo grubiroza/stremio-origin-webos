@@ -23,7 +23,12 @@ typedef struct { Item *items; int n; int total; /* total: the metas in the answe
 
 /* url: the first page as asked (also the cache's name); path: the address before the extra part, extra: what the
    first page is asked with (a required property's first option, or none), skip: the catalog takes "skip" (pages) */
-typedef struct { char title[96], type[16], url[512], key[48], path[512], extra[200]; int skip; } CatalogDef;
+/* domar: a catalog's address holds its addon's whole address (SB_BASE_MAX, addons.h: 2048) and what follows it. In 512
+   an addon that carries its setup in its address (a list addon's chosen lists, a debrid addon's key) was asked for its
+   catalogs under a cut address: a row that never came, or came as the addon's "configure me" */
+#define SB_CAT_PATH 2496 /* the addon's address + "/catalog/<type>/<id>" */
+#define SB_CAT_URL 2704  /* that + "/<extra>.json" */
+typedef struct { char title[96], type[16], url[SB_CAT_URL], key[48], path[SB_CAT_PATH], extra[200]; int skip; } CatalogDef;
 
 int  sb_init(void);
 /* ---- account ---- */
@@ -132,7 +137,8 @@ void sb_forget_stream(const char *id, const char *vid); /* domar: a remembered s
 /* from: where it came from (the stream itself, a subtitles addon, the OpenSubtitles fallback); addon: that source's
    name; label: the addon's own label for it ("" when none); order: the addon's place in the list */
 enum { SUB_STREAM = 0, SUB_ADDON = 1, SUB_FALLBACK = 2 };
-typedef struct { char lang[24], name[64], url[1024]; int n; char addon[64], label[96]; int from, order; char rel[96]; int hm, forced; double fps; } SubEntry; /* rel: the file's own name when told; hm: found by the video's hash; forced: only the lines in another language and the signs (its flag, else its name); fps: the frame rate it was timed for (0 unknown) */
+#define SB_SUB_URL 2048 /* domar: a subtitle's address (1024: one that carries its addon's setup, or another address inside it, was cut and never loaded) */
+typedef struct { char lang[24], name[64], url[SB_SUB_URL]; int n; char addon[64], label[96]; int from, order; char rel[96]; int hm, forced; double fps; } SubEntry; /* rel: the file's own name when told; hm: found by the video's hash; forced: only the lines in another language and the signs (its flag, else its name); fps: the frame rate it was timed for (0 unknown) */
 /* the subtitles a stream object carried (stream.subtitles), kept from its addon's answer; *out malloc'd (NULL when none) */
 int  sb_stream_subs(const Stream *s, SubEntry **out);
 

@@ -106,7 +106,7 @@ static float kf(double at, float dur, const float *c, float delay) { if (!at) re
 /* ---- state ---- */
 #define MAXBTN 9 /* domar: 8 + "Subtitle delay" (an episode with a next one fills every place) */
 #define MAXROW 64
-typedef struct { int k; /* 0 note 1 skel 2 ep 3 src 4 chip; ls: a subtitle row's list, 1 OpenSubtitles 2 the addons' */ char lb[200], sub[120], ov[300], th[512], vl[48]; int on, spin, tool, hid, grey; int i, ls; const cJSON *v; Stream *st; char u[1024]; float d, hh, ww, vw; uint32_t sw; int vwt; } TItem; /* vwt: the value's weight (0: 700), a font row's in its own font */ /* hh, ww, vw: measured on first draw (items are made fresh, zeroed) */
+typedef struct { int k; /* 0 note 1 skel 2 ep 3 src 4 chip; ls: a subtitle row's list, 1 OpenSubtitles 2 the addons' */ char lb[200], sub[120], ov[300], th[512], vl[48]; int on, spin, tool, hid, grey; int i, ls; const cJSON *v; Stream *st; char u[SB_SUB_URL]; float d, hh, ww, vw; uint32_t sw; int vwt; } TItem; /* vwt: the value's weight (0: 700), a font row's in its own font */ /* hh, ww, vw: measured on first draw (items are made fresh, zeroed) */
 typedef struct { char title[64], vl[32]; TItem *items; int n; } TCol;
 static float fill_ease(double t);
 typedef struct { int k; /* 0 none 1 intro 2 recap 3 outro */ int big, nbtn, idx, autoN; double t0, adur; struct { const char *id; char lb[48]; double to; int main; } b[2]; } PPrompt;
@@ -154,7 +154,7 @@ static struct {
   /* the sources tray's lists: one per addon serving the video (in the user's order), all asked as it opens; each stream
      read once as it comes (best_facts), the best fit for this TV among them all */
   struct { char vid[SB_VID]; struct { char name[96]; Stream *items; BestFacts *f; int n, st, nf, came; unsigned tok; Mo ia; } g[16]; int ng, on, bg, bi; } srcs; /* st: 0 not asked, 1 asked (or came, its streams still being read: nf of n, came set), 2 shown, 3 came empty; ia: its rows fading in as they come; bg/bi: the best fit (-1 none) */
-  /* subs */ SubEntry *ext; int next_; int nExt, extLoading; char curSub[1100]; struct { int list; char addon[64], lang[24]; } pick; Cue *cues; int ncues; double subDelay; VidTrack emb[16]; int nEmb; int autoSubDone; unsigned subReq; unsigned trSubTok; int locDone;
+  /* subs */ SubEntry *ext; int next_; int nExt, extLoading; char curSub[SB_SUB_URL + 16]; struct { int list; char addon[64], lang[24]; } pick; Cue *cues; int ncues; double subDelay; VidTrack emb[16]; int nEmb; int autoSubDone; unsigned subReq; unsigned trSubTok; int locDone;
   int curAud; int autoAudDone; int didResume;
   /* sound this TV can't decode (DTS, TrueHD): when the DTS track started playing, the codecs refused on this stream (error
      200), what was said */ struct { double playAt; char bad[4][16]; int nbad, said, gaveUp, switches;
@@ -1648,10 +1648,10 @@ static void tray_data(void) {
     else if (!addonsTab) {
       snprintf(c1->title, 64, "%s", P.isTrailer ? T("Subtitles") : T("In the file")); snprintf(c2->title, 64, "%s", P.isTrailer ? T("Languages") : "OpenSubtitles");
       x = col_add(c1, 4); snprintf(x->lb, 200, "%s", T("Off")); x->on = !strcmp(P.curSub, "off"); snprintf(x->u, 1024, "off");
-      if (!P.isTrailer) { if (!P.embKnown && !P.nEmb) { col_add(c1, 1); col_add(c1, 1); } /* the file's head is still being read */ else if (!P.nEmb) { x = col_add(c1, 0); snprintf(x->lb, 200, "%s", T("None in this file")); } else for (int i = 0; i < P.nEmb; i++) { x = col_add(c1, 4); emb_label(i, x->lb, 200); x->i = P.emb[i].idx; char k[16]; snprintf(k, sizeof k, "emb:%d", P.emb[i].idx); x->on = !strcmp(P.curSub, k); x->spin = x->on && SL.wait; snprintf(x->u, 1024, "%s", k); } }
+      if (!P.isTrailer) { if (!P.embKnown && !P.nEmb) { col_add(c1, 1); col_add(c1, 1); } /* the file's head is still being read */ else if (!P.nEmb) { x = col_add(c1, 0); snprintf(x->lb, 200, "%s", T("None in this file")); } else for (int i = 0; i < P.nEmb; i++) { x = col_add(c1, 4); emb_label(i, x->lb, 200); x->i = P.emb[i].idx; char k[16]; snprintf(k, sizeof k, "emb:%d", P.emb[i].idx); x->on = !strcmp(P.curSub, k); x->spin = x->on && SL.wait; snprintf(x->u, sizeof x->u, "%s", k); } }
       /* the built-in OpenSubtitles list (the addons' are in their own tab) */
       int onExt = sub_row(1, P.ext, P.nExt);
-      for (int i = 0; i < P.nExt; i++) { int same = 0; for (int j = 0; j < P.nExt; j++) if (!strcmp(P.ext[j].lang, P.ext[i].lang)) same++; x = col_add(c2, 4); if (same > 1) snprintf(x->lb, 200, "%s %d", T(P.ext[i].name), P.ext[i].n); /* the page's two spaces show as one */ else snprintf(x->lb, 200, "%s", T(P.ext[i].name)); tag_forced(x->lb, 200, P.ext[i].forced); x->on = i == onExt; x->spin = x->on && SL.wait; x->ls = 1; x->i = i; snprintf(x->u, 1024, "%s", P.ext[i].url); }
+      for (int i = 0; i < P.nExt; i++) { int same = 0; for (int j = 0; j < P.nExt; j++) if (!strcmp(P.ext[j].lang, P.ext[i].lang)) same++; x = col_add(c2, 4); if (same > 1) snprintf(x->lb, 200, "%s %d", T(P.ext[i].name), P.ext[i].n); /* the page's two spaces show as one */ else snprintf(x->lb, 200, "%s", T(P.ext[i].name)); tag_forced(x->lb, 200, P.ext[i].forced); x->on = i == onExt; x->spin = x->on && SL.wait; x->ls = 1; x->i = i; snprintf(x->u, sizeof x->u, "%s", P.ext[i].url); }
       if (!c2->n) { if (P.extLoading && !P.isTrailer) { col_add(c2, 1); col_add(c2, 1); col_add(c2, 1); } else { x = col_add(c2, 0); snprintf(x->lb, 200, "%s", T("None found")); } }
     } else {
       /* the addons' tab: their languages (the one you read first, then by name), and the chosen language's subtitles
@@ -1673,7 +1673,7 @@ static void tray_data(void) {
       for (int i = 0; i < P.nAdx; i++) { const SubEntry *e = &P.adx[i]; char k[24]; if (strcmp(subs_lang_canon(e->lang, k, sizeof k), P.subLang)) continue;
         int same = 0; for (int j = 0; j < P.nAdx; j++) { char k2[24]; if (P.adx[j].order == e->order && !strcmp(subs_lang_canon(P.adx[j].lang, k2, sizeof k2), k)) same++; }
         x = col_add(c2, 4); if (e->label[0]) snprintf(x->lb, 200, "%s", e->label); else if (same > 1) snprintf(x->lb, 200, "%s %d", T(e->name), e->n); else snprintf(x->lb, 200, "%s", T(e->name));
-        tag_forced(x->lb, 200, e->forced); snprintf(x->sub, 120, "%s", e->addon); x->on = i == onAdx; x->spin = x->on && SL.wait; x->ls = 2; x->i = i; snprintf(x->u, 1024, "%s", e->url); }
+        tag_forced(x->lb, 200, e->forced); snprintf(x->sub, 120, "%s", e->addon); x->on = i == onAdx; x->spin = x->on && SL.wait; x->ls = 2; x->i = i; snprintf(x->u, sizeof x->u, "%s", e->url); }
       if (!c2->n && nk) { x = col_add(c2, 0); snprintf(x->lb, 200, "%s", T("None found")); }
       else if (!c2->n && P.adxLoading) { col_add(c2, 1); col_add(c2, 1); }
     }
@@ -1739,7 +1739,7 @@ static void tray_data(void) {
 }
 static void render_tray(int fresh) {
   if (!P.tray.kind) return;
-  if (src_tray()) { if (fresh) SR.idx = -1; int z = P.tray.zone; tray_data(); P.tray.zone = !fresh && z == 1 ? 1 : 0; return; } /* the sources: their own list (on the tabs: they keep it) */ char keepU[1024] = ""; char keepLb[200] = ""; int keepK = -1;
+  if (src_tray()) { if (fresh) SR.idx = -1; int z = P.tray.zone; tray_data(); P.tray.zone = !fresh && z == 1 ? 1 : 0; return; } /* the sources: their own list (on the tabs: they keep it) */ char keepU[SB_SUB_URL] = ""; char keepLb[200] = ""; int keepK = -1;
   { TItem *cur = NULL; if (P.tray.ncols) cur = P.tray.c < P.tray.ncols && P.tray.r[P.tray.c] >= 0 && P.tray.r[P.tray.c] < P.tray.cols[P.tray.c].n ? &P.tray.cols[P.tray.c].items[P.tray.r[P.tray.c]] : NULL; else cur = P.tray.idx >= 0 && P.tray.idx < P.tray.n ? &P.tray.row[P.tray.idx] : NULL;
     if (cur && !fresh) { snprintf(keepU, sizeof keepU, "%s", cur->u); snprintf(keepLb, sizeof keepLb, "%s", cur->lb); keepK = cur->k; } }
   tray_data();

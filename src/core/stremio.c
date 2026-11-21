@@ -129,6 +129,7 @@ void sb_sync_addons(void (*cb)(int, void *), void *ud) {
   ChBox *x = malloc(sizeof *x); x->cb = cb; x->ud = ud; net_post_json(STREMIO_API "/api/addonCollectionGet", body, on_addons, x); free(body);
 }
 /* ---- catalogs ------------------------------------------------------------------------------ */
+_Static_assert(SB_CAT_PATH >= SB_BASE_MAX + 440 && SB_CAT_URL >= SB_CAT_PATH + 208, "a catalog's address must hold its addon's whole address");
 static const char *type_label(const char *t) { return !strcmp(t, "movie") ? T("Movies") : !strcmp(t, "series") ? T("Series") : t; }
 static void def_url(CatalogDef *d) { snprintf(d->url, sizeof d->url, "%s%s%s.json", d->path, d->extra[0] ? "/" : "", d->extra); }
 static void def_set(CatalogDef *d, const char *title, const char *type, const char *path, const char *extra, int skip, const char *key) {
@@ -140,11 +141,11 @@ static void def_set(CatalogDef *d, const char *title, const char *type, const ch
    search or a list of ids. from: how many to pass over first */
 static int board_defs(CatalogDef *out, int max, int from) {
   int n = 0, seen = 0; cJSON *a = sb_addons(); const cJSON *ad; if (!a) return 0; int ai = 0;
-  cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[512]; addon_base(ad, base, sizeof base); int ci = 0;
+  cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base); int ci = 0;
     if (cats) cJSON_ArrayForEach(cat, cats) {
       const char *ctype = js_str(cat, "type", NULL), *cid = js_str(cat, "id", NULL); char ex[200];
       if (ctype && cid && *ctype && *cid && addon_cat_default_extra(cat, ex, sizeof ex) == 0 && seen++ >= from && n < max) {
-        CatalogDef *d = &out[n++]; const char *nm = js_str(cat, "name", ""); char title[96], key[48], path[512], te[96], ie[300];
+        CatalogDef *d = &out[n++]; const char *nm = js_str(cat, "name", ""); char title[96], key[48], path[SB_CAT_PATH], te[96], ie[300];
         snprintf(title, sizeof title, "%s%s%s", nm, *nm ? " · " : "", type_label(ctype)); snprintf(key, sizeof key, "a%d_%d", ai, ci);
         addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
         def_set(d, title, ctype, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key); }
@@ -180,10 +181,10 @@ int sb_disc_types(char (*out)[16], int max) {
 }
 int sb_disc_cats(const char *type, CatalogDef *out, char (*addon)[64], int max) {
   int n = 0, ai = 0; cJSON *a = sb_addons(); const cJSON *ad;
-  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[512]; addon_base(ad, base, sizeof base); int ci = 0;
+  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base); int ci = 0;
     if (cats) cJSON_ArrayForEach(cat, cats) { char ex[200];
       if (n < max && disc_cat_ok(cat, ex, sizeof ex) && !strcmp(js_str(cat, "type", ""), type)) {
-        char key[48], path[512], te[96], ie[300]; const char *nm = js_str(cat, "name", ""), *cid = js_str(cat, "id", "");
+        char key[48], path[SB_CAT_PATH], te[96], ie[300]; const char *nm = js_str(cat, "name", ""), *cid = js_str(cat, "id", "");
         snprintf(key, sizeof key, "dc%d_%d", ai, ci); addon_urlenc(type, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
         def_set(&out[n], *nm ? nm : cid, type, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key);
         if (addon) copy_str(addon[n], 64, js_str(js_obj(ad, "manifest"), "name", "")); n++; }
@@ -231,10 +232,10 @@ int sb_disc_defs_f(CatalogDef *out, int max, const char *type, const char *genre
   int n = 0;
   if (!*genre) { static CatalogDef all[128]; int m = sb_disc_defs(all, 128); for (int i = 0; i < m && n < max; i++) if (type_ok(all[i].type, type)) out[n++] = all[i]; return n; }
   static const char *const G[] = { "genre" }; cJSON *a = sb_addons(); const cJSON *ad; int ai = 0;
-  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[512]; addon_base(ad, base, sizeof base); int ci = 0;
+  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) { ai++; continue; } const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base); int ci = 0;
     if (cats) cJSON_ArrayForEach(cat, cats) { const char *ct = js_str(cat, "type", ""), *cid = js_str(cat, "id", ""); const cJSON *opts = NULL;
       if (n < max && *cid && type_ok(ct, type) && addon_cat_extra(cat, "genre", NULL, &opts, NULL) && opts && has_opt(opts, genre) && addon_cat_accepts(cat, G, 1)) {
-        char ex[200] = "", title[96], key[48], path[512], te[96], ie[300]; const char *nm = js_str(cat, "name", ""); addon_extra_add(ex, sizeof ex, "genre", genre);
+        char ex[200] = "", title[96], key[48], path[SB_CAT_PATH], te[96], ie[300]; const char *nm = js_str(cat, "name", ""); addon_extra_add(ex, sizeof ex, "genre", genre);
         snprintf(title, sizeof title, "%s%s%s", nm, *nm ? " · " : "", type_label(ct)); snprintf(key, sizeof key, "f%d_%d", ai, ci);
         addon_urlenc(ct, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
         def_set(&out[n++], title, ct, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key); }
@@ -274,7 +275,7 @@ static ItemList *list_from_metas(const cJSON *metas, const char *type, int max) 
   const cJSON *m; cJSON_ArrayForEach(m, metas) { if (l->n >= n) break; sb_fill_item(&l->items[l->n], m, type); if (l->items[l->n].id[0]) l->n++; }
   return l;
 }
-typedef struct { char url[512], type[16], key[600]; int n; /* key: "cat:" + the whole address (cut short, every catalog of one addon shared one file) */ void (*cb)(ItemList *, int, void *); void *ud; char *cachedJson; int force; } CatReq; /* force: asked past the addon's cacheMaxAge, the kept copy not shown again */
+typedef struct { char url[SB_CAT_URL], type[16], key[SB_CAT_URL + 8]; int n; /* key: "cat:" + the whole address (cut short, every catalog of one addon shared one file) */ void (*cb)(ItemList *, int, void *); void *ud; char *cachedJson; int force; } CatReq; /* force: asked past the addon's cacheMaxAge, the kept copy not shown again */
 /* a big list (a live addon's 500 channels: turning it into items and its slim copy took 100-450 ms) is done on a
    thread of its own and handed back on the next frame; the rows' small lists stay as they were (at once) */
 #define CAT_BIG 100
@@ -285,7 +286,7 @@ static int cat_gone(int st, const cJSON *j) { const cJSON *m = js_arr(j, "metas"
 /* a list counts as gone on a second launch that finds it so (a hotel's sign-in page or an addon's source down for an
    hour leaves it), at once for a 404/410; any answer with channels clears the count */
 static long launchId(void) { static long id; if (!id) id = (long)time(NULL); return id; }
-static int cat_strike(const CatReq *r, int how) { char k[620]; snprintf(k, sizeof k, "gone:%s", r->url);
+static int cat_strike(const CatReq *r, int how) { char k[SB_CAT_URL + 8]; snprintf(k, sizeof k, "gone:%s", r->url);
   if (!how) { size_t l; unsigned char *d = cache_read(k, 0, &l); if (d && l > 1) cache_write(k, (const unsigned char *)"0", 1); free(d); return 0; }
   if (how == 2) return 1; size_t l; unsigned char *d = cache_read(k, 0, &l); long was = d ? atol((const char *)d) : 0; free(d);
   if (was > 0 && was != launchId()) return 1; if (was != launchId()) fprintf(stderr, "[addon] a list answered without channels: kept, dropped if the next launch finds it so too\n"); char v[24]; int n = snprintf(v, sizeof v, "%ld", launchId()); cache_write(k, (const unsigned char *)v, (size_t)n); return 0; }
@@ -323,7 +324,7 @@ static void on_catalog(int st, const unsigned char *b, size_t len, void *ud) {
     int same = r->cachedJson && !strcmp(r->cachedJson, txt);
     int fresh = r->cachedJson && cat_kept_fresh(r->key, j, r->type);
     if (!fresh) cache_write(r->key, (unsigned char *)txt, strlen(txt));
-    { AddonCache h; addon_cache_hints(j, &h); char hk[620], v[24]; snprintf(hk, sizeof hk, "cah:%s", r->url); int k = snprintf(v, sizeof v, "%ld", h.maxAge > 0 ? h.maxAge : 0); cache_write(hk, (unsigned char *)v, (size_t)k); } /* how long the addon says it holds */
+    { AddonCache h; addon_cache_hints(j, &h); char hk[SB_CAT_URL + 8], v[24]; snprintf(hk, sizeof hk, "cah:%s", r->url); int k = snprintf(v, sizeof v, "%ld", h.maxAge > 0 ? h.maxAge : 0); cache_write(hk, (unsigned char *)v, (size_t)k); } /* how long the addon says it holds */
     Uint32 tq2 = SDL_GetTicks(); if (!same && !fresh) r->cb(l, 0, r->ud); else itemlist_free(l);
     if (getenv("SB_SLOWLOG")) fprintf(stderr, "[cat] %d metas, %d kept: list %u ms, slim %u ms, page %u ms (%s)\n", cJSON_GetArraySize(metas), r->n, tq1 - tq0, tq2 - tq1, SDL_GetTicks() - tq2, same ? "same" : fresh ? "fresh copy shown" : "new");
     free(txt);
@@ -343,7 +344,7 @@ static void cat_work(CatJob *k) {
     k->same = r->cachedJson && txt && !strcmp(r->cachedJson, txt);
     k->fresh = r->cachedJson && cat_kept_fresh(r->key, k->j, r->type);
     if (!k->fresh && txt) cache_write(r->key, (unsigned char *)txt, strlen(txt));
-    { AddonCache h; addon_cache_hints(k->j, &h); char hk[620], v[24]; snprintf(hk, sizeof hk, "cah:%s", r->url); int n = snprintf(v, sizeof v, "%ld", h.maxAge > 0 ? h.maxAge : 0); cache_write(hk, (unsigned char *)v, (size_t)n); }
+    { AddonCache h; addon_cache_hints(k->j, &h); char hk[SB_CAT_URL + 8], v[24]; snprintf(hk, sizeof hk, "cah:%s", r->url); int n = snprintf(v, sizeof v, "%ld", h.maxAge > 0 ? h.maxAge : 0); cache_write(hk, (unsigned char *)v, (size_t)n); }
     if (getenv("SB_SLOWLOG")) fprintf(stderr, "[cat] %d metas, %d kept, on its own thread: %u ms (%s)\n", cJSON_GetArraySize(metas), r->n, SDL_GetTicks() - tq0, k->same ? "same" : k->fresh ? "fresh copy shown" : "new");
     free(txt); k->l = l; }
   else { k->none = 1; int g = cat_gone(k->st, k->j); k->gone = g && r->cachedJson && cat_strike(r, g); } /* (no answer, 5xx, 429: nothing counted, nothing cleared) */
@@ -362,7 +363,7 @@ static void on_cat_cached(int st, const unsigned char *b, size_t n, void *ud) { 
 static void *cat_cached_run(void *a) { plat_thread_background(5); CatJob *k = a; CatReq *r = k->r;
   size_t cl; unsigned char *t = cache_read(r->key, 0, &cl);
   if (t) { cJSON *c = cJSON_Parse((const char *)t); if (cJSON_IsArray(c) && cJSON_GetArraySize(c)) { r->cachedJson = (char *)t; if (!r->force) k->l = list_from_metas(c, r->type, r->n); } else free(t); cJSON_Delete(c); }
-  if (r->cachedJson) { char hk[620], cp[1200]; snprintf(hk, sizeof hk, "cah:%s", r->url); size_t hl; unsigned char *h = cache_read(hk, 0, &hl); long age = h ? atol((const char *)h) : 0; free(h);
+  if (r->cachedJson) { char hk[SB_CAT_URL + 8], cp[1200]; snprintf(hk, sizeof hk, "cah:%s", r->url); size_t hl; unsigned char *h = cache_read(hk, 0, &hl); long age = h ? atol((const char *)h) : 0; free(h);
     k->age = age > 0 && cache_file(r->key, age, cp, sizeof cp) && !r->force; }
   net_file("", on_cat_cached, k); return NULL; }
 void sb_catalog_url(const char *url, const char *type, int n, void (*cb)(ItemList *, int, void *), void *ud) {
@@ -371,7 +372,7 @@ void sb_catalog_url(const char *url, const char *type, int n, void (*cb)(ItemLis
   size_t cl; unsigned char *t = cache_read(r->key, 0, &cl);
   if (t) { cJSON *c = cJSON_Parse((const char *)t); if (cJSON_IsArray(c) && cJSON_GetArraySize(c)) { r->cachedJson = (char *)t; cb(list_from_metas(c, type, n), 1, ud); } else free(t); cJSON_Delete(c); }
   /* the addon's own cacheMaxAge: a copy younger than that is the answer (no request) */
-  if (r->cachedJson) { char hk[620], cp[1200]; snprintf(hk, sizeof hk, "cah:%s", url); size_t hl; unsigned char *h = cache_read(hk, 0, &hl); long age = h ? atol((const char *)h) : 0; free(h);
+  if (r->cachedJson) { char hk[SB_CAT_URL + 8], cp[1200]; snprintf(hk, sizeof hk, "cah:%s", url); size_t hl; unsigned char *h = cache_read(hk, 0, &hl); long age = h ? atol((const char *)h) : 0; free(h);
     if (age > 0 && cache_file(r->key, age, cp, sizeof cp)) { free(r->cachedJson); free(r); return; } }
   if (traktrows_is(url)) { traktrows_fetch(url, on_catalog, r); return; } /* (Trakt's rows: asked of Trakt with the account's token, answered as an addon would) */
   net_get_timeout(url, 45000, on_catalog, r); /* (an addon that makes its lists on demand, AIOMetadata from TMDB, took more than the 20 s of other calls: the row stayed hidden) */
@@ -399,17 +400,17 @@ static void on_page(int st, const unsigned char *b, size_t len, void *ud) {
   page_work(k); on_page_done(0, NULL, 0, k); /* (no thread: here, as before) */
 }
 void sb_catalog_page(const CatalogDef *d, int skip, void (*cb)(ItemList *, int, void *), void *ud) {
-  char ex[260], sk[16], url[800]; copy_str(ex, sizeof ex, d->extra); snprintf(sk, sizeof sk, "%d", skip); addon_extra_add(ex, sizeof ex, "skip", sk);
+  char ex[260], sk[16], url[SB_CAT_URL + 64]; copy_str(ex, sizeof ex, d->extra); snprintf(sk, sizeof sk, "%d", skip); addon_extra_add(ex, sizeof ex, "skip", sk);
   snprintf(url, sizeof url, "%s/%s.json", d->path, ex);
   PageReq *r = calloc(1, sizeof *r); copy_str(r->type, sizeof r->type, d->type); r->cb = cb; r->ud = ud; net_get(url, on_page, r);
 }
 /* every catalog that takes a search (and needs nothing else), in addon order */
 int sb_search_defs(const char *q, CatalogDef *out, int max) {
   int n = 0; cJSON *a = sb_addons(); const cJSON *ad; if (!a) return 0; static const char *const SN[1] = { "search" };
-  cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) continue; const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[512]; addon_base(ad, base, sizeof base);
+  cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) continue; const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base);
     if (cats) cJSON_ArrayForEach(cat, cats) { const char *ctype = js_str(cat, "type", NULL), *cid = js_str(cat, "id", NULL);
       if (!ctype || !cid || !addon_cat_accepts(cat, SN, 1) || n >= max) continue;
-      char path[512], te[96], ie[300], ex[300] = ""; addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
+      char path[SB_CAT_PATH], te[96], ie[300], ex[300] = ""; addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
       addon_extra_add(ex, sizeof ex, "search", q); def_set(&out[n++], js_str(cat, "name", ""), ctype, path, ex, 0, ""); } }
   return n;
 }

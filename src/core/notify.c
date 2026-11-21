@@ -72,7 +72,7 @@ static void ask(void) {
   qsort(picks, (size_t)n, sizeof picks[0], cmp_mtime); if (n > MAXIDS) n = MAXIDS;
   N.eps = cJSON_CreateObject(); N.up = cJSON_CreateArray(); N.pending = 1; N.gotAny = 0; N.busy = 1; /* (1: held while the requests go out) */
   cJSON *a = sb_addons(); const cJSON *ad;
-  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) continue; char base[512]; addon_base(ad, base, sizeof base);
+  if (a) cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) continue; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base);
     const cJSON *cat; cJSON_ArrayForEach(cat, js_arr(js_obj(ad, "manifest"), "catalogs")) {
       if (strcmp(js_str(cat, "type", ""), "series")) continue;
       const cJSON *ex; int kind = -1; cJSON_ArrayForEach(ex, js_arr(cat, "extra")) { const char *nm = js_str(ex, "name", ""); if (!strcmp(nm, "lastVideosIds")) kind = 0; else if (!strcmp(nm, "calendarVideosIds")) kind = 1; }
@@ -81,7 +81,7 @@ static void ask(void) {
       for (int i = 0; i < n; i++) { const char *id = js_str(picks[i], "_id", ""); if (!addon_serves(ad, "catalog", "series", id) || o + strlen(id) + 2 >= sizeof ids) continue; o += (size_t)snprintf(ids + o, sizeof ids - o, "%s%s", k ? "," : "", id); k++; }
       if (!k) continue;
       char ex2[sizeof ids * 3 + 64] = ""; addon_extra_add(ex2, sizeof ex2, kind ? "calendarVideosIds" : "lastVideosIds", ids);
-      char url[sizeof ex2 + 1024]; addon_url(url, sizeof url, base, "catalog", "series", js_str(cat, "id", ""), ex2);
+      char url[sizeof ex2 + SB_BASE_MAX + 512]; addon_url(url, sizeof url, base, "catalog", "series", js_str(cat, "id", ""), ex2);
       N.pending++; net_get(url, on_answer, (void *)(intptr_t)kind);
       fprintf(stderr, "[notify] asking %s about %d series (%s)\n", addon_name(ad), k, kind ? "coming" : "new episodes"); } }
   if (--N.pending <= 0) finish();
