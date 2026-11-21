@@ -138,7 +138,7 @@ static struct {
   struct { unsigned tok; int pending, sent, nsrc, isEp, se, en, chapWait; double quickAt, endAt, d; struct { char url[440]; int kind, tries, live; double retryAt; } job[3]; struct { int rank; struct { int has; double s, e; } g[3]; } src[4]; } sk;
   /* next episode from the closest source */
   int nextTried; struct { unsigned tok; int done, has; double bs, until; char vid[SB_VID], info[700], url[SB_URL_MAX], addon[96], binge[96]; Stream best; } nx;
-  int ended; double endGoAt; double metaRetryAt;
+  int ended; double endGoAt; double metaRetryAt; int wrong; /* domar: 1 what plays is not this film (wrong_file), -1 it is, 0 not known yet */
   /* the paused screensaver, the file size, the picture size */
   double liveT0, steadyAt; /* the first frame came / playing steadily since */
   int ssOn; double ssAt, ssCheckAt, lastAct; double size; char sizeTxt[24]; unsigned sizeTok; int httpSt, sizeAns, canNext; double errAt; int lastVw, lastVh; double aspRefreshAt;
@@ -400,7 +400,22 @@ static void ep_back_check(void) {
   P.epState = 1; cJSON *l = lib_get(P.id); int n = l ? lib_unwatch_after(l, P.videos, P.vid) : 0;
   fprintf(stderr, "[lib] watching again from this episode: it is the series' place now, %d later episode(s) unwatched\n", n);
 }
-static void save_progress(int push) { double d = dur(); if (!P.id[0] || P.isTrailer || d <= 0 || live_title() || getenv("SB_PLAY_NOSAVE")) return; /* (a live broadcast: no place in Continue Watching, nothing to resume) */ /* (SB_PLAY_NOSAVE: development plays leave the library alone) */
+/* domar: a remembered link can come to play something else. A debrid link opened later from another address (the
+   line's IP changed overnight) answers with a two-minute notice clip instead of the film. Resumed at the kept place,
+   past its end, it ended at once: the episode was marked watched and its place was lost (seen 2026-11-21, AIOStreams:
+   "Opened on a different connection"). So: a file less than half as long as the one this place was kept in is not
+   this film: nothing is resumed, kept or marked, the next episode does not start by itself, and another source picked
+   in the player starts from the kept place. Decided once, when the length is known. */
+static int wrong_file(void) {
+  if (P.wrong) return P.wrong > 0; if (P.isTrailer || !P.id[0] || live_title()) return 0;
+  double dn = dur(); if (dn <= 0) return 0;
+  cJSON *l = lib_get(P.id); const cJSON *st = js_obj(l, "state");
+  double d = st && !strcmp(js_str(st, "video_id", ""), P.vid) ? js_num(st, "duration", 0) / 1000 : 0, to = d > 0 ? js_num(st, "timeOffset", 0) / 1000 : 0;
+  if (!(d > 0 && to > 5 && dn < d * 0.5)) { P.wrong = -1; return 0; }
+  P.wrong = 1; fprintf(stderr, "[player] not the film this place was kept in (%.0f s long, that one %.0f s, the place at %.0f s): nothing kept or marked\n", dn, d, to);
+  toast(T("This link no longer plays the film. Your place is kept: pick a source again"), 9000, NULL); return 1;
+}
+static void save_progress(int push) { double d = dur(); if (!P.id[0] || P.isTrailer || d <= 0 || live_title() || getenv("SB_PLAY_NOSAVE")) return; if (wrong_file()) return; /* (a live broadcast: no place in Continue Watching, nothing to resume) */ /* (SB_PLAY_NOSAVE: development plays leave the library alone) */
   ep_decide(); if (P.epState != 1) return; /* an earlier episode not watched long enough yet, or a special: the series keeps its place */
   int ep = episodic() && P.next.has && P.next.vid[0];
   if (P.marked && !ep) return; /* watched to the credits, nothing after it: out of Continue Watching (marking it set its place to the start) */
@@ -412,7 +427,7 @@ static void save_progress(int push) { double d = dur(); if (!P.id[0] || P.isTrai
   if (push) fprintf(stderr, "[lib] place kept: %s at %.0f of %.0f s\n", P.vid, video_time(), d);
   P.lastSave = now_(); }
 static void mark_watched(void) {
-  if (P.isTrailer || P.marked || live_title() || getenv("SB_PLAY_NOSAVE")) return; P.marked = 1; Item it = lib_item(); cJSON *l = lib_get(P.id); if (!l) l = lib_new_item(&it);
+  if (P.isTrailer || P.marked || live_title() || getenv("SB_PLAY_NOSAVE")) return; if (wrong_file()) return; P.marked = 1; Item it = lib_item(); cJSON *l = lib_get(P.id); if (!l) l = lib_new_item(&it);
   if (episodic() && P.videos && strcmp(P.vid, P.id)) { snprintf(it.videoId, sizeof it.videoId, "%s", P.vid); lib_episode_watched(&it, P.videos); } /* it and the aired ones before it; the show's place on to the next (a special: itself) */
   else if (!strcmp(P.type, "series") && P.vid[0] && strcmp(P.vid, P.id)) { snprintf(it.videoId, sizeof it.videoId, "%s", P.vid); lib_episode_watched(&it, NULL); } /* its episode list not here yet: from the cached one (never as a film) */
   else lib_set_movie_watched(l, 1);
@@ -422,6 +437,7 @@ static char resumeMsg[80];
 static void try_resume(void) {
   if (P.didResume || P.isTrailer) return; P.didResume = 1;
   if (live_title()) return; /* a broadcast plays from where it is now */
+  if (wrong_file()) return; /* domar: not this film: from its start (what it says is seen), the kept place untouched */
   if (P.startAt < 0) return; /* "Watch from the beginning" */
   if (P.startAt > 0) { video_seek(P.startAt); return; } /* another source: same moment */
   { float tp = lib_trakt_resume(P.id, P.vid); double d = dur(); if (tp > 0 && d > 0) { double sec = tp * d; /* Trakt's pause, the newer (another app, another device) */
@@ -1556,7 +1572,7 @@ static void src_rows(void) {
 static void src_choose(int i) {
   if (!src_focusable(i)) return; SRow r = SR.r[i];
   if (r.k == 6) { close_tray(); return; } /* (the one playing: nothing to change) */
-  int same = P.tray.kind == 2; char v[SB_VID]; snprintf(v, sizeof v, "%s", same ? P.vid : P.tray.epvid); Stream s = P.srcs.g[r.g].items[r.i]; play_stream(&s, v, same ? video_time() : 0);
+  int same = P.tray.kind == 2; char v[SB_VID]; snprintf(v, sizeof v, "%s", same ? P.vid : P.tray.epvid); Stream s = P.srcs.g[r.g].items[r.i]; play_stream(&s, v, same && !wrong_file() ? video_time() : 0); /* (domar: not this film: the next source from the kept place) */
 }
 /* an episode not aired yet (its date after today): nothing to give away, and no still to blur */
 static int ep_unaired(const cJSON *e) { const char *rel = js_str(e, "released", js_str(e, "firstAired", "")); int y, m, d; if (sscanf(rel, "%d-%d-%d", &y, &m, &d) != 3) return 0; time_t now = time(NULL); struct tm *t = localtime(&now); int today = (t->tm_year + 1900) * 10000 + (t->tm_mon + 1) * 100 + t->tm_mday; return y * 10000 + m * 100 + d > today; }
@@ -1736,7 +1752,7 @@ static void choose(TItem *it) {
   else if (it->k == 2) { /* an episode: its sources, right here */
     const cJSON *v = it->v; P.tray.backIdx = P.tray.idx; P.tray.backTab = P.tray.tab; P.tray.kind = 5; snprintf(P.tray.epvid, sizeof P.tray.epvid, "%s", js_str(v, "id", "")); P.tray.idx = -1; P.tray.tab = 0; P.tray.zone = 0;
     snprintf(P.tray.title, 300, "S%d:E%d  ·  %s", (int)js_num(v, "season", 0), (int)js_num(v, "episode", 0), js_str(v, "name", js_str(v, "title", ""))); render_tray(1);
-  } else if (it->k == 3) { int same = P.tray.kind == 2; const char *vid = same ? P.vid : P.tray.epvid; Stream s = *it->st; play_stream(&s, vid, same ? video_time() : 0); }
+  } else if (it->k == 3) { int same = P.tray.kind == 2; const char *vid = same ? P.vid : P.tray.epvid; Stream s = *it->st; play_stream(&s, vid, same && !wrong_file() ? video_time() : 0); }
 }
 static TItem *tray_cur(void) { if (P.tray.ncols) return P.tray.c < P.tray.ncols && P.tray.r[P.tray.c] >= 0 && P.tray.r[P.tray.c] < P.tray.cols[P.tray.c].n ? &P.tray.cols[P.tray.c].items[P.tray.r[P.tray.c]] : NULL; return P.tray.idx >= 0 && P.tray.idx < P.tray.n ? &P.tray.row[P.tray.idx] : NULL; }
 static int step_in(const TItem *l, int n, int from, int d) { for (int i = from + d; i >= 0 && i < n; i += d) if (focusable(&l[i])) return i; return -1; }
@@ -2533,7 +2549,7 @@ void player_tick(float dt) {
     if (vs == VID_PLAYING && at_credits() && !P.marked) { mark_watched(); save_progress(1); } /* the credits: watched, everywhere, at once */
     if (vs == VID_PLAYING && now_() - P.lastSave >= 10) save_progress(0);
     if (vs == VID_ENDED && !P.ended && live_reload("the stream ended")) vs = video_state();
-    if (vs == VID_ENDED && !P.ended) { P.ended = 1; scrobble_player_end(video_time(), dur(), 1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has) P.endGoAt = now_() + 0.6; else close_player(0, 0); }
+    if (vs == VID_ENDED && !P.ended) { P.ended = 1; scrobble_player_end(video_time(), dur(), 1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has && !wrong_file()) P.endGoAt = now_() + 0.6; else close_player(0, 0); }
     if (P.endGoAt && now_() >= P.endGoAt) { P.endGoAt = 0; go_next(); if (!P.open || P.closing) return; }
     check_prompt();
     if (P.prompt.autoN && (P.prompt.k == 1 || P.prompt.k == 2) && now_() - P.prompt.t0 >= P.prompt.adur && !paused()) prompt_go(0);
