@@ -2775,7 +2775,9 @@ static void draw_subs_lines(void) {
 /* while the position is set: a sample line in the viewer's style where the subtitles will sit, when none shows */
 static void draw_subs_(void);
 /* the subtitles */
-static void draw_subs(void) { draw_subs_(); } /* (at their own brightness under every tray: an open tray lifts them over it, never dims them) */
+/* domar: gone while a tray is open (they fade with it): a tall tray (Sources, Subtitles) reaches past where they were
+   lifted to, and the lines showed through its glass, over its rows. The TV's own lines (it holds the track) are not ours to hide */
+static void draw_subs(void) { float k = P.tray.kind ? 1 - P.tray.openA.v : 1; if (k <= 0.01f) { subDrew = 0; return; } if (k < 0.999f) gfx_opacity_push(k); draw_subs_(); if (k < 0.999f) gfx_opacity_pop(); }
 static void draw_subs_(void) {
   subDrew = 0; draw_subs_lines(); float a = P.posA.v;
   if (asssubs_on()) { asssubs_sample(a > 0.01f); return; }
