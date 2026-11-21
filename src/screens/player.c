@@ -11,6 +11,7 @@
 #include "core/keys.h"
 #include "core/i18n.h"
 #include "core/json.h"
+#include "core/epnames.h"
 #include "core/net.h"
 #include "core/store.h"
 #include "core/subs.h"
@@ -2528,6 +2529,9 @@ void player_tick(float dt) {
   hand_tick(dt);
   subs_pump(); /* subtitle files and lists, fetched on their own threads */
   if (!P.open) return; video_pump(); sync_tick();
+  { static unsigned eg; if (eg != epnames_gen()) { eg = epnames_gen(); /* domar: TMDB's names for the episodes the metadata had none for came in: into this copy, and the words on screen */
+      if (P.meta && P.videos && !strcmp(P.type, "series") && epnames_patch(P.meta)) { const cJSON *v; cJSON_ArrayForEach(v, P.videos) { const char *vi = js_str(v, "id", ""), *nm = js_str(v, "name", ""); if (!*nm) continue;
+          if (!strcmp(vi, P.vid)) snprintf(P.epTitle, sizeof P.epTitle, "%s", nm); if (P.next.has && !strcmp(vi, P.next.vid)) snprintf(P.next.title, sizeof P.next.title, "%s", nm); } } } }
   css();
   Mo *mo[] = { &P.pgA, &P.pgY, &P.in, &P.artA, &P.ttlA, &P.ttlX, &P.ttlY, &P.barA, &P.barY, &P.btnA, &P.btnY, &P.topR, &P.topY, &P.dim, &P.dimT, &P.vig, &P.pzA, &P.bufA, &P.lnA, &P.pwA, &P.pwF, &P.skA, &P.skS, &P.knA,
     &P.prA, &P.prY, &P.prB, &P.subB, &P.ccS, &P.dlyA, &P.dlyR, &P.posA, &P.p2pA, &P.focX, &P.focY, &P.focW, &P.focH, &P.focA, &P.tipA, &P.hvA, &P.tray.open, &P.tray.openA, &P.tray.rowX, &P.tray.tabsX, &P.tray.ringX, &P.tray.ringY, &P.tray.ringA, &RL.t };

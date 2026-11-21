@@ -9,6 +9,7 @@
 #include "core/net.h"
 #include "core/store.h"
 #include "core/json.h"
+#include "core/epnames.h"
 #include "core/i18n.h"
 #include "core/addons.h"
 #include <stdio.h>
@@ -465,6 +466,8 @@ typedef struct { char key[SB_ID + 32]; cJSON *meta; unsigned use, gen; } MetaEnt
 static MetaEnt metaMem[40]; static unsigned metaUse, metaVer = 1; /* metaVer: bumps whenever an entry comes or goes */
 static int meta_slot(const char *type, const char *id) { char k[SB_ID + 32]; snprintf(k, sizeof k, "%s_%s", type, id); unsigned g = addon_gen(); for (int i = 0; i < 40; i++) if (metaMem[i].meta && metaMem[i].gen == g && !strcmp(metaMem[i].key, k)) { metaMem[i].use = ++metaUse; return i; } return -1; }
 cJSON *sb_meta_cached(const char *type, const char *id) { int i = meta_slot(type, id); return i >= 0 ? metaMem[i].meta : NULL; }
+/* domar: every cached copy of a title's metadata (the disk's and the addon's answer can both stand under one key) */
+void sb_meta_each(const char *type, const char *id, void (*fn)(cJSON *meta, void *ud), void *ud) { char k[SB_ID + 32]; snprintf(k, sizeof k, "%s_%s", type, id); for (int i = 0; i < 40; i++) if (metaMem[i].meta && !strcmp(metaMem[i].key, k)) fn(metaMem[i].meta, ud); }
 static void meta_put(const char *k, cJSON *m) { metaVer++; int slot = 0; unsigned old = 0xffffffffu; for (int i = 0; i < 40; i++) { if (!metaMem[i].meta) { slot = i; break; } if (metaMem[i].use < old) { old = metaMem[i].use; slot = i; } }
   if (metaMem[slot].meta) cJSON_Delete(metaMem[slot].meta); copy_str(metaMem[slot].key, sizeof metaMem[slot].key, k); metaMem[slot].meta = m; metaMem[slot].use = ++metaUse; metaMem[slot].gen = addon_gen(); }
 /* a title page's disk copy: under the addons' setup too */
@@ -476,6 +479,7 @@ static void on_meta(int st, const unsigned char *b, size_t n, void *ud) {
   MetaReq *r = ud; cJSON *j = st == 200 ? net_json(b) : NULL; cJSON *m = j ? cJSON_DetachItemFromObjectCaseSensitive(j, "meta") : NULL; net_json_free(j);
   if (!cJSON_IsObject(m)) { cJSON_Delete(m); meta_try(r); return; }
   char ck[SB_ID + 48]; meta_ck(ck, sizeof ck, r->key); cache_write(ck, b, n); /* the answer as it came ({"meta":...}): printing a series' tree again took a frame */
+  epnames_apply(r->type, r->id, m); /* domar: TMDB's names for the episodes it has none for yet */
   meta_put(r->key, m);
   if (!r->fresh) r->cb(m, r->ud);
   free(r);
@@ -496,7 +500,7 @@ static void on_meta_disk(int st, const unsigned char *b, size_t n, void *ud) {
   if (h.maxAge > 0 && cJSON_IsObject(c)) { char ck[SB_ID + 48], cp[1200]; meta_ck(ck, sizeof ck, r->key); if (cache_file(ck, h.maxAge, cp, sizeof cp)) r->nb = 0; } /* younger than the addon's cacheMaxAge: no request */
   cJSON *m = sb_meta_cached(r->type, r->id); /* asked again meanwhile and answered from the addons */
   if (m) { cJSON_Delete(c); r->fresh = 1; r->cb(m, r->ud); }
-  else if (cJSON_IsObject(c)) { meta_put(r->key, c); r->fresh = 1; r->cb(c, r->ud); } else cJSON_Delete(c);
+  else if (cJSON_IsObject(c)) { epnames_apply(r->type, r->id, c); meta_put(r->key, c); r->fresh = 1; r->cb(c, r->ud); } else cJSON_Delete(c);
   meta_go(r);
 }
 /* the addons that describe this id, in addon order (as the official core picks them), each asked in turn until one

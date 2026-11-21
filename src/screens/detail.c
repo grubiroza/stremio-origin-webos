@@ -12,6 +12,7 @@
 #include "core/keys.h"
 #include "core/i18n.h"
 #include "core/json.h"
+#include "core/epnames.h"
 #include "core/best.h"
 #include "core/tmdb.h"
 #include "core/trailer.h"
@@ -533,6 +534,7 @@ static void coll_check(void) {
   D.nfacts = (D.facts[0][0] || D.facts[1][0] || D.facts[2][0]) ? 1 : 0; D.ver++; make_btns(); }
 static void tick(float dt) {
   coll_check();
+  { static unsigned eg; if (eg != epnames_gen()) { eg = epnames_gen(); if (D.meta && epnames_patch(D.meta)) DC.ok = 0; } } /* domar: TMDB's names for the episodes the metadata had none for came in: the cards made again */
   { static int waited; if (D.meta && (credits_gen() != D.credGen || (!D.nppl && !waited && app_now() - D.openAt >= 2.0))) { waited = app_now() - D.openAt >= 2.0; D.credGen = credits_gen(); unsigned n0 = D.nppl; ppl_build(); if ((unsigned)D.nppl != n0) DC.ok = 0; if (!n0 && D.nppl && !D.hadPpl && !D.moreWait) { timer_start(&D.pplIn, 0.42f); D.hadPpl = 1; } } /* (late faces fade up, never pop) */ if (app_now() - D.openAt < 0.1) waited = 0; } /* TMDB's people came in, or 2 s went by: the names Cinemeta has */
   tween_set(&D.pScroll, 0); /* (seven faces: no scrolling) */
   nudge_tick(&D.nudge, dt); fpill_tick(&D.pill, dt); faces_tick();
