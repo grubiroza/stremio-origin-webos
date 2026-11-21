@@ -1,6 +1,6 @@
 /* stderr becomes a pipe; a thread reads it, passes every byte on to where stderr went before (so the terminal
    and /tmp/<appid>.log read as they always did) and keeps each line scrubbed and time-stamped in applog.log in
-   the data folder (400 KB, then the newer half is kept) and in memory (the last 300). A crash puts stderr back
+   the data folder (4 MB, then the newer half is kept) and in memory (the last 300). A crash puts stderr back
    before the crash report is written, so the report reaches the terminal / device log even though this
    thread never sees it. */
 #include "core/applog.h"
@@ -39,7 +39,7 @@
 #define SB_APP_ID "tv.stremioorigin.app"
 #endif
 
-#define APPLOG_MAX (400 * 1024)
+#define APPLOG_MAX (4 * 1024 * 1024) /* domar: 400 KB held about an hour of use: what went wrong the evening before was gone by the time it was looked for */
 #define RING 300
 static int teeFd = -1, fileFd = -1, pipeR = -1;
 static volatile int exiting, drained;
