@@ -7,6 +7,7 @@
 #include "screens/sheet.h"
 #include "core/app.h"
 #include "core/best.h"
+#include "core/live.h"
 #include "core/keys.h"
 #include "core/i18n.h"
 #include "ui/gfx.h"
@@ -35,7 +36,7 @@
 #define LIST_PAD 14.0f /* the list starts this far under its clip: a held row's line runs outside the row, and the first one's top was cut */
 #define DS_MAX 6           /* a row's words: at most this many lines, then an ellipsis */
 enum { R_PLAIN, R_RESUME, R_BEST };
-typedef struct { char name[96]; Stream *items; int n; int resume; } Group;
+typedef struct { char name[96]; Stream *items; BestFacts *f; int n; int resume; } Group; /* domar: f: each stream's facts (best_facts), read once as it comes */
 static struct {
   int open, zone; /* 0 list, 1 chips */ Tween x, op; /* the panel's slide and fade: an even ease-out (the quick-tween curve put it all in the first two frames) */ Tween out; int closing; SGlass glass;
   Group groups[MAXG]; int ng; unsigned tok; int loading; double t; char key[160];
@@ -56,7 +57,7 @@ static struct {
 int streams_open(void) { return S.open; }
 static void count_redo(void) { int n = 0; for (int g = 0; g < S.ng; g++) if (!S.groups[g].resume) n += S.groups[g].n; S.total = n; S.chipsLaid = 0; }
 static int count(void) { return S.total; }
-static void groups_clear(void) { for (int g = 0; g < S.ng; g++) free(S.groups[g].items); memset(S.groups, 0, sizeof S.groups); S.ng = 0; count_redo(); }
+static void groups_clear(void) { for (int g = 0; g < S.ng; g++) { free(S.groups[g].items); free(S.groups[g].f); } memset(S.groups, 0, sizeof S.groups); S.ng = 0; count_redo(); }
 static void render_chips(void) { S.chipsLaid = 0;
   int curG = S.chipIdx < S.nchips ? S.chips[S.chipIdx] : -1; S.nchips = 0; S.chips[S.nchips++] = -1;
   for (int g = 0; g < S.ng; g++) if (S.groups[g].n && !S.groups[g].resume) S.chips[S.nchips++] = g;
@@ -85,7 +86,9 @@ static void rebuild(void) {
 static void add(const Stream *arr, int n, int gIdx, const char *gName, int resume) {
   if (gIdx >= MAXG) return; Group *g = &S.groups[gIdx]; if (gIdx >= S.ng) S.ng = gIdx + 1; if (!g->name[0]) snprintf(g->name, sizeof g->name, "%s", gName ? gName : T("Addon")); g->resume = resume;
   int kept = 0; for (int i = 0; i < S.ng; i++) kept += S.groups[i].n;
-  int k = n < PER_ADDON - g->n ? n : PER_ADDON - g->n; if (k > STORE_MAX - kept) k = STORE_MAX - kept; if (k > 0) { g->items = realloc(g->items, (g->n + k) * sizeof *g->items); memcpy(g->items + g->n, arr, k * sizeof *arr); g->n += k; }
+  int k = n < PER_ADDON - g->n ? n : PER_ADDON - g->n; if (k > STORE_MAX - kept) k = STORE_MAX - kept; if (k > 0) { g->items = realloc(g->items, (g->n + k) * sizeof *g->items); memcpy(g->items + g->n, arr, k * sizeof *arr); g->n += k;
+    BestFacts *nf = realloc(g->f, g->n * sizeof *g->f); if (nf) { g->f = nf; Uint32 t0 = SDL_GetTicks(); int dm = best_dur(sb_meta_cached(S.type, S.id), S.type); for (int j = g->n - k; j < g->n; j++) best_facts(&g->items[j], NULL, -1, dm, &g->f[j]);
+      if (SDL_GetTicks() - t0 > 8) fprintf(stderr, "[streams] %d streams of %s read in %u ms\n", k, g->name, (unsigned)(SDL_GetTicks() - t0)); } else { free(g->f); g->f = NULL; } }
   count_redo();
   if (S.open) { render_chips(); rebuild(); }
 }
@@ -137,10 +140,20 @@ static void play(int i) { const Stream *s = S.items[i]; fpill_press(&S.pill);
    it, wrapped, nothing cut), on the sheets' glass; a long one scrolls with Up/Down */
 #define INFO_PAD 36.0f
 #define INFO_M 64.0f   /* the screen's safe margin */
+/* domar: a film's or an episode's stream as the player's Sources lists it: what it is ("4K  \xc2\xb7  DV HDR10  \xc2\xb7  EAC3 Atmos 5.1")
+   with its size and kind on the right, the release's name under it, and the one thing that matters on this TV when
+   there is one. An aggregator's five or six lines of words took the screen with three streams; held, OK shows them
+   all (the details panel the best fit's row had). A stream nothing is read from (a channel, a web page) stays as it was */
+#define CR_PX 23
+#define CR_LH 31.0f
+static const BestFacts *facts_of(int i) { int g = i < S.n ? S.itemGroup[i] : -1; if (g < 0 || g >= S.ng || !S.groups[g].f) return NULL; long k = (long)(S.items[i] - S.groups[g].items); return k >= 0 && k < S.groups[g].n ? &S.groups[g].f[k] : NULL; }
+static int compact(int i) { if (i >= S.n || S.kind[i] != R_PLAIN || !S.items[i]->url[0] || live_type(S.type)) return 0; const BestFacts *f = facts_of(i); return f && (f->facts[0] || f->rel[0]); }
 static const char *INFO_LBL[3] = { "Name", "Description", "File" };
 static const char *info_text(const Stream *s, int i) { return i == 0 ? s->name : i == 1 ? s->title : s->filename; }
-static const char *info_title(void) { return S.idx < S.n && S.kind[S.idx] == R_RESUME ? T("Resume last stream") : T("Best fit for this TV"); } /* the details panel's heading: the row it came from */
-static void info_sub(const Stream *s, char *out, size_t cap) { const char *sum = S.idx < S.n && S.kind[S.idx] == R_RESUME ? S.resumeSum : S.bestSum; snprintf(out, cap, "%s%s%s", s->addon, s->addon[0] && sum[0] ? "  \xc2\xb7  " : "", sum); }
+static const char *info_title(void) { if (S.idx < S.n && S.kind[S.idx] == R_PLAIN) return S.groups[S.itemGroup[S.idx]].name; return S.idx < S.n && S.kind[S.idx] == R_RESUME ? T("Resume last stream") : T("Best fit for this TV"); } /* the details panel's heading: the row it came from */
+static void info_sub(const Stream *s, char *out, size_t cap) { const char *sum = S.idx < S.n && S.kind[S.idx] == R_RESUME ? S.resumeSum : S.bestSum;
+  if (S.idx < S.n && S.kind[S.idx] == R_PLAIN) { const BestFacts *bf = facts_of(S.idx); snprintf(out, cap, "%s%s%s", bf ? bf->facts : "", bf && bf->facts[0] && bf->meta[0] ? "  \xc2\xb7  " : "", bf ? bf->meta : ""); return; } /* (a plain row: its facts; its addon is the heading) */
+  snprintf(out, cap, "%s%s%s", s->addon, s->addon[0] && sum[0] ? "  \xc2\xb7  " : "", sum); }
 /* the widest line of some words (each of their lines measured alone) */
 static float lines_w(const char *t, int px, int wt) { float m = 0; char b[600]; const char *p = t;
   while (*p) { const char *e = strchr(p, '\n'); size_t l = e ? (size_t)(e - p) : strlen(p); if (l >= sizeof b) l = sizeof b - 1; memcpy(b, p, l); b[l] = 0; float w = text_width(b, px, wt, 0); if (w > m) m = w; if (!e) break; p = e + 1; }
@@ -186,7 +199,7 @@ static int key(int k) {
   if (k == K_DOWN) { if (S.idx < S.n - 1) S.idx++; else nudge_start(&S.nudge, k); }
   else if (k == K_UP) { if (S.idx > 0) S.idx--; else if (S.nchips > 1) S.zone = 1; else if (is_ep_list()) { S.zone = 2; sound_focus(); } else nudge_start(&S.nudge, k); }
   else if (k == K_RIGHT) nudge_start(&S.nudge, k);
-  else if (k == K_OK) { if (S.idx < S.n && S.kind[S.idx] != R_PLAIN) { S.holding = 1; S.swelled = 0; S.holdAt = app_now(); } /* a tap plays it, held: its details */
+  else if (k == K_OK) { if (S.idx < S.n && (S.kind[S.idx] != R_PLAIN || compact(S.idx))) { S.holding = 1; S.swelled = 0; S.holdAt = app_now(); } /* a tap plays it, held: its details */
     else if (S.idx < S.n) play(S.idx); }
   else if (k == K_LEFT || k == K_BACK) streams_close(0);
   return 1;
@@ -216,8 +229,8 @@ static void layout(void) {
   for (int i = 0; i < S.n; i++) { int g = S.itemGroup[i];
     S.headY[i] = -1; if (S.filter < 0 && S.kind[i] == R_PLAIN && g != lastG) { S.headY[i] = y; y += head_h(); } if (S.kind[i] == R_PLAIN) lastG = g;
     char *nm = S.nm[i]; row_name(i, nm, sizeof S.nm[i]); const char *ds = row_desc(i); int ico = S.kind[i] != R_PLAIN;
-    int nl = text_wrap_count(nm, LW - 48 - (ico ? ICO + 10 : 0), 2, NM_PX, 600, 0.2f), dl = ds[0] ? text_wrap_count(ds, LW - 48, DS_MAX, DS_PX, 400, 0) : 0;
-    S.itemY[i] = y; S.itemH[i] = 18 + nl * NM_LH + 8 + dl * DS_LH + 20; y += S.itemH[i] + 8; }
+    int cp = compact(i), nl = cp ? 1 : text_wrap_count(nm, LW - 48 - (ico ? ICO + 10 : 0), 2, NM_PX, 600, 0.2f), dl = cp || !ds[0] ? 0 : text_wrap_count(ds, LW - 48, DS_MAX, DS_PX, 400, 0); /* (a compact row: nothing to wrap) */
+    S.itemY[i] = y; S.itemH[i] = cp ? 16 + NM_LH + 4 + CR_LH + (facts_of(i)->warn[0] ? 4 + CR_LH : 0) + 16 : 18 + nl * NM_LH + 8 + dl * DS_LH + 20; y += S.itemH[i] + 8; }
 }
 static void tick(float dt) {
   tween_tick(&S.x, dt > 0.034f ? 0.034f : dt); tween_tick(&S.op, dt > 0.034f ? 0.034f : dt); tween_tick(&S.out, dt); if (S.closing && !S.out.on && S.out.v <= 0) S.closing = 0;
@@ -232,7 +245,7 @@ static void tick(float dt) {
   tween_tick(&S.phA, dt); tween_tick(&S.msgA, dt); tween_tick(&S.spA, dt); tween_tick(&S.infoK, dt); qt_tick(&S.infoY, dt); sglass_tick(&S.pglass, dt);
   { int rk = S.zone * 1000 + S.idx + (S.idx < S.n ? S.kind[S.idx] * 100000 : 0); if (rk != S.restKey) { S.restKey = rk; S.restAt = app_now(); } }
   if (S.holding) {
-    if (S.zone != 0 || S.idx >= S.n || S.kind[S.idx] == R_PLAIN || !S.open) S.holding = 0;
+    if (S.zone != 0 || S.idx >= S.n || (S.kind[S.idx] == R_PLAIN && !compact(S.idx)) || !S.open) S.holding = 0;
     else if (app_hold_k(S.holdAt) >= 1) { S.holding = 0; info_open(); }
     else if (!app_ok_down()) { S.holding = 0; play(S.idx); }
     else if (app_hold_k(S.holdAt) > 0 && !S.swelled) { S.swelled = 1; sound_play(SND_HOLD); } }
@@ -363,11 +376,19 @@ static void draw(void) {
     hit_add(x0, iy, LW, ih, item_focus, item_act, i, 0);
     const char *nm = S.nm[i]; const char *ds = row_desc(i); int ico = S.kind[i] != R_PLAIN;
     float tx = rtl ? lx - 24 + nx : x0 + 24 + nx, ty = iy + 18 + ny; uint32_t nc = f ? ACC_FG : ACC3;
+    int cp = compact(i); float ha = 0; if ((ico || cp) && f && !S.holding && !S.info) { ha = (float)((now - S.restAt - 3) / 0.4); ha = ha < 0 ? 0 : ha > 1 ? 1 : ha; } /* resting on it 3 s: how to see all of it, faint */
+    if (cp) { const BestFacts *bf = facts_of(i); float l1 = iy + 16 + ny, l2 = l1 + NM_LH + 4, ex = rtl ? x0 + 24 + nx : x0 + LW - 24 + nx; int ar = rtl ? ALIGN_LEFT : ALIGN_RIGHT;
+      float mw = bf->meta[0] ? text_width(bf->meta, CR_PX, 600, 0) : 0;
+      if (mw && ha < 1) text_draw(bf->meta, ex, l1 + (NM_LH - text_line_height(CR_PX)) / 2, CR_PX, 600, col_alpha(f ? ACC_FG : WHITE_A(185), f ? 0.85f * (1 - ha) : 1), 0, 0, ar); /* (its size and kind give way to the hint) */
+      text_draw(bf->facts[0] ? bf->facts : nm, tx, l1 + (NM_LH - text_line_height(NM_PX)) / 2, NM_PX, 600, nc, 0.2f, LW - 48 - (mw ? mw + 24 : 0), al);
+      text_draw(bf->rel[0] ? bf->rel : bf->facts[0] ? nm : S.items[i]->addon, tx, l2 + (CR_LH - text_line_height(CR_PX)) / 2, CR_PX, 400, f ? ACC_FG : WHITE_A(170), 0, LW - 48, al);
+      if (bf->warn[0]) { float wy = l2 + CR_LH + 4; uint32_t wc = f ? ACC_FG : RGB(0xff, 0x9a, 0x7a); icon_draw("minus", rtl ? tx - 22 : tx, wy + (CR_LH - 22) / 2, 22, wc); text_draw(bf->warn, rtl ? tx - 32 : tx + 32, wy + (CR_LH - text_line_height(22)) / 2, 22, 700, wc, 0, LW - 48 - 32, al); } }
+    else {
     if (ico) { icon_draw("play", rtl ? tx - ICO : tx, ty + (NM_LH - ICO) / 2 + 1, ICO, nc); tx += rtl ? -(ICO + 10) : ICO + 10; }
     int nl = text_draw_wrapped(nm, tx, ty + (NM_LH - text_line_height(NM_PX)) / 2, LW - 48 - (ico ? ICO + 10 : 0), 2, NM_PX, 600, nc, 0.2f, al, NM_LH); ty += nl * NM_LH + 8;
     if (ds[0]) text_draw_wrapped(ds, rtl ? lx - 24 + nx : x0 + 24 + nx, ty + (DS_LH - text_line_height(DS_PX)) / 2, LW - 48, DS_MAX, DS_PX, 400, f ? ACC_FG : WHITE_A(204), 0, al, DS_LH);
-    if (S.kind[i] != R_PLAIN && f) { float ha = (float)((now - S.restAt - 3) / 0.4); ha = ha < 0 ? 0 : ha > 1 ? 1 : ha; /* resting on it 3 s: how to see all of it, faint */
-      if (S.holding || S.info) ha = 0;
+    }
+    if ((S.kind[i] != R_PLAIN || cp) && f) {
       if (ha > 0) key_hint(rtl ? x0 + 24 + nx : x0 + LW - 24 + nx, iy + 18 + ny + NM_LH / 2, K_OK, T("Hold for details"), col_alpha(ACC_FG, 0.8f * ha), !rtl); /* the remote's OK, then what holding it does */
       float hk = S.holding ? app_hold_k(S.holdAt) : 0; if (hk > 0) hold_trace_draw(x0 + nx, iy + ny, LW, ih, 18, ease_apply(EASE_IN_OUT, hk)); }
     if (rdy > 0.01f) gfx_offset_pop(); if (fa < 1) gfx_opacity_pop(); }
