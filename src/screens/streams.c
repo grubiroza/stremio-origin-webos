@@ -223,7 +223,7 @@ static void tick(float dt) {
   tween_tick(&S.x, dt > 0.034f ? 0.034f : dt); tween_tick(&S.op, dt > 0.034f ? 0.034f : dt); tween_tick(&S.out, dt); if (S.closing && !S.out.on && S.out.v <= 0) S.closing = 0;
   nudge_tick(&S.nudge, dt); qt_tick(&S.chipsX, dt); qt_tick(&S.listY, dt); fpill_tick(&S.pill, dt); sglass_tick(&S.glass, dt);
   layout(); float y = S.idx > 0 && S.idx - 1 < S.n ? S.itemY[S.idx - 1] : 0; /* the card above the focus stays fully visible */
-  qt_to(&S.listY, -y, 0.24f);
+  if (!app_ptr_hold()) qt_to(&S.listY, -y, 0.24f); /* domar: pointed at: the list stays */
   if (S.zone == 0 && S.idx < S.n) fpill_to(&S.pill, 0, S.itemY[S.idx], LW, S.itemH[S.idx], GLIDE_DUR); else fpill_hide(&S.pill);
   fpill_tick(&S.chipPill, dt); qt_tick(&S.ulX, dt); qt_tick(&S.ulW, dt); tween_to(&S.phA, S.loading && !S.n ? 1 : 0, 0.22f, EASE_IN_OUT); tween_to(&S.msgA, !S.loading && !S.n ? 1 : 0, 0.26f, EASE_IN_OUT); tween_to(&S.spA, S.loading ? 1 : 0, 0.25f, EASE_IN_OUT);
   { char nl[96] = ""; if (S.loading && S.pend > 0) { char n[16]; snprintf(n, sizeof n, "%d", S.pend); snprintf(nl, sizeof nl, "%s", S.pend == 1 ? T("1 add-on left") : T1("{n} add-ons left", "n", n)); }

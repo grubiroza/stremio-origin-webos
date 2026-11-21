@@ -227,7 +227,7 @@ static void lift(int i) { if (i == L.fcur) return; L.fold = L.fcur; tween_set(&L
 static void paint(void) { rail_paint(0); head_want();
   lift(L.zone == 1 ? L.idx : -1);
   tween_to(&L.ringA, L.zone == 1 ? 1 : 0, 0.16f, EASE_IN_OUT);
-  int row = L.zone == 1 ? L.idx / COLS : 0; tween_to(&L.gridY, -row * LROWH, 0.32f, EASE_OUT); }
+  int row = L.zone == 1 ? L.idx / COLS : 0; if (!app_ptr_hold()) tween_to(&L.gridY, -row * LROWH, 0.32f, EASE_OUT); } /* domar: pointed at: the grid stays where it is */
 static void enter(const void *p) {
   (void)p; int keep = L.built && L.ver == lib_version(); if (!L.built) L.zone = 1; /* the first visit opens on the grid */ L.built = 1;
   if (!keep) { L.ver = lib_version(); load(); coll_cards(); L.collVer = coll_version(); render(); }

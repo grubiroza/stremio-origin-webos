@@ -112,7 +112,7 @@ static void tick(float dt) {
   coll_show(); logos_ahead();
   if (G.pendTmdb) { if (app_now() - G.pendAt > 15) G.pendTmdb = 0; else for (int i = 0; i < G.items.n; i++) { const Coll *c = coll_get(G.ckey); if (!c) break; for (int k = 0; k < c->n; k++) if (c->part[k].tmdb == G.pendTmdb && c->part[k].id[0]) { Item it = G.items.items[i]; for (int q = 0; q < G.items.n; q++) if (!strcmp(G.items.items[q].id, c->part[k].id)) it = G.items.items[q]; G.pendTmdb = 0; open_it(&it); return; } break; } } /* (a film picked before its id came) */
   timer_tick(&G.ring.pop, dt); tween_tick(&G.gridY, dt); timer_tick(&G.fade, dt); nudge_tick(&G.nudge, dt);
-  int row = G.idx / COLS; float y = row > 1 ? (row - 1) * ROWH : 0; tween_to(&G.gridY, -y, 0.3f, EASE_OUT);
+  int row = G.idx / COLS; float y = row > 1 ? (row - 1) * ROWH : 0; if (!app_ptr_hold()) tween_to(&G.gridY, -y, 0.3f, EASE_OUT); /* domar: pointed at: the grid stays */
   /* the ring jumps to the card and lands with a small pop (never glides across the others) */
   if (G.items.n) { int rtl = app_rtl(); float cx = 48 + 14 + (G.idx % COLS) * (CARD_W + CARD_GAP), cy = 16 + row * ROWH; if (rtl) cx = SB_W - cx - CARD_W;
     if (!G.ring.shown || G.ring.x != cx || G.ring.y != cy) { static double last; int pop = !G.ring.shown || focus_pops(&last); G.ring.x = cx; G.ring.y = cy; G.ring.shown = 1; if (pop) timer_start(&G.ring.pop, 0.2f); else G.ring.pop.on = 0; } } /* held: it jumps, lit */

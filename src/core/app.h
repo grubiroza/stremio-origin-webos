@@ -130,6 +130,7 @@ uint32_t acc_a(float a);               /* the accent with an alpha */
 void app_pointer_move(float x, float y);          /* layout units */
 void app_pointer_button(int down, float x, float y);
 void app_pointer_wheel(float dx, float dy);
+int  app_ptr_hold(void);                          /* domar: the pointer last moved the highlight: the page does not scroll under it (until a key) */
 void app_pointer_system(int show);                /* the TV showed / hid its cursor */
 
 /* ---- toast / notices ---- */

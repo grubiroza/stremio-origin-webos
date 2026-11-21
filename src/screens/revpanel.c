@@ -448,7 +448,7 @@ static void draw_right(float x, float top, float bottom, int rtl) {
       if (f) gfx_offset_pop(); }
     return; }
   /* scrolled so the focused one shows whole */
-  if (R.zone == 1 && R.cIdx < R.nvis) { int i = R.cIdx; float want = R.listY.to; if (R.cy[i] + R.ch[i] - want > vh) want = R.cy[i] + R.ch[i] - vh; if (R.cy[i] - want < 0) want = R.cy[i]; if (want > R.listH - vh) want = fmaxf(0, R.listH - vh); qt_to(&R.listY, want, 0.3f); }
+  if (R.zone == 1 && R.cIdx < R.nvis) { int i = R.cIdx; float want = R.listY.to; if (R.cy[i] + R.ch[i] - want > vh) want = R.cy[i] + R.ch[i] - vh; if (R.cy[i] - want < 0) want = R.cy[i]; if (want > R.listH - vh) want = fmaxf(0, R.listH - vh); if (!app_ptr_hold()) qt_to(&R.listY, want, 0.3f); }
   float tk = R.tabAt > 0 ? (float)((app_now() - R.tabAt) / 0.32) : 1; tk = tk > 1 ? 1 : tk; tk = quint(tk); /* (a new tab: its list slides in from its side) */
   float ca = ap_sig(AP_COMM, R.nvis > 0, (unsigned)R.sel * 31u + (unsigned)R.nvis); gfx_clip_push(x - 8, y - 8, RW + 16, vh + 16); gfx_opacity_push((0.2f + 0.8f * tk) * ca); gfx_offset_push(0, 14 * (1 - ca)); gfx_offset_push(48 * (1 - tk) * R.tabDir * (rtl ? -1 : 1), y - R.listY.v);
   float cnx = R.zone == 1 ? nudge_x(&R.nudge) : 0, cny = R.zone == 1 ? nudge_y(&R.nudge) : 0;

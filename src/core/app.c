@@ -733,8 +733,13 @@ static void idle_touch_by(const char *why) { if (bgt_state() == BGT_LOAD || bgt_
 void app_touch(void) { idle_touch(); }
 /* the page Settings or Search was opened from: its colour key pressed again there goes back to it */
 static Scr colorFrom; static int colorFromSet;
+/* domar: the pointer moves the highlight and nothing else. While it was the pointer that last moved the focus, no page
+   scrolls or slides to follow it (Home's rows and the channels' grid already held still: now the Library, Search, a
+   collection, a title's page, Settings and the lists of streams and comments too); the next key lets them follow again */
+static int ptrLed;
+int app_ptr_hold(void) { return ptrLed; }
 void app_go(Scr s, const void *params, int noStack) {
-  idle_touch();
+  idle_touch(); ptrLed = 0; /* domar: another page: it places itself by its own focus */
   if (!noStack && SCR != s) { float ox, oy; int has = 1; if (navf.kind == NAV_ZOOM) { ox = navf.x; oy = navf.y; } else has = scr_origin(&ox, &oy); /* nothing focused: a plain fade in, Back toward the middle */
     if (nback == 8) { memmove(backStack, backStack + 1, 7 * sizeof *backStack); memmove(backX, backX + 1, 7 * sizeof *backX); memmove(backY, backY + 1, 7 * sizeof *backY); nback = 7; }
     backX[nback] = ox; backY[nback] = oy; backStack[nback++] = SCR;
@@ -808,7 +813,7 @@ static void ok_up(void) {
   menuGuard = 0; int wasDown = okHold.down, menu = okHold.menu, has = okHold.has; Item it = okHold.item; Screen *hov = okHold.ov;
   memset(&okHold, 0, sizeof okHold); okHold.ov = hov;
   Screen *ov = okHold.ov; (void)ov;
-  if (wasDown && !menu && has) { /* short press = the card's normal action */
+  if (wasDown && !menu && has) { ptrLed = 0; /* short press = the card's normal action (domar: what it opens places itself by its own focus) */
     if (ov) { if (app_overlay == ov && ov->open) ov->open(&it); return; }
     if (screens[SCR] && screens[SCR]->open) screens[SCR]->open(&it); else app_open_item(&it); }
 }
@@ -824,9 +829,10 @@ static void key_core(int k, int down, int repeat);
 #define PTR_DEDUPE 0.15
 #define PTR_WHEEL 0.07
 #define PTR_ARROW_WIN 0.35
-#define PTR_ARROW_DIST 32
+#define PTR_ARROW_DIST 120 /* domar: 32 until 2026-11-21: a hand that only holds the remote moved that far, and the highlight went to wherever the pointer was */
+#define PTR_WAKE 0.3 /* domar: back from an arrow, the pointer moves the highlight only after this long: the remote jolted by the press of the next arrow (17 to 230 ms before the key, as logged) no longer takes the highlight first */
 #define PTR_ARROW_PAUSE 0.3
-static struct { int on; float x, y; Hit hv; int hasHv; float hx, hy; double movedAt; int down, downAct; Hit act; double okKeyAt, clickAt, wheelAt; int eatUp, eatOk, arrowHid; double arrowAt; int anchor; float ax, ay; double tremAt; int dirty; double activeAt; int tvHid, okPtr; } PTR;
+static struct { int on; float x, y; Hit hv; int hasHv; float hx, hy; double movedAt; int down, downAct; Hit act; double okKeyAt, clickAt, wheelAt; int eatUp, eatOk, arrowHid; double arrowAt; int anchor; float ax, ay; double tremAt; int dirty; double activeAt; int tvHid, okPtr; double wokeAt; } PTR;
 static void ptr_show(void) { PTR.arrowHid = 0; PTR.activeAt = NOW; if (PTR.tvHid) { PTR.tvHid = 0; plat_pointer_visible(1); } if (PTR.on) return; PTR.on = 1; PTR.hasHv = 0; }
 static void ptr_hide(void) { if (!PTR.on) return; PTR.on = 0; PTR.hasHv = 0; }
 static void ptr_put_away(void) { int was = PTR.on; ptr_hide(); if (was && !PTR.tvHid) { PTR.tvHid = 1; plat_pointer_visible(0); } } /* the TV's own pointer too, as its own apps do (the app's state alone left it on screen) */
@@ -848,12 +854,13 @@ static void ptr_settle(double now) { if (!PTR.hasHv) return; const Hit *h = hit_
    does what it points at (player_ptr) */
 static void ptr_frame(void) { if (!PTR.on || !PTR.dirty) return; PTR.dirty = 0; double now = NOW; if (player_open()) { extern void player_ptr(int type, float x, float y); player_ptr(0, PTR.x, PTR.y); return; }
   if (PTR.down) return; /* pressed: a hand's tremble must not move the press onto the next card */
+  if (PTR.wokeAt && now - PTR.wokeAt < PTR_WAKE) { PTR.dirty = 1; return; } /* domar: just back from an arrow: not yet */
   ptr_settle(now); const Hit *d = hit_at(PTR.x, PTR.y);
   if (topNav.active && !(d && d->nav)) ptr_nav_back();
   if (!d || !d->focus || (PTR.hasHv && hit_same(d, &PTR.hv))) return;
   if (PTR.movedAt && now - PTR.movedAt < PTR_SETTLE) { PTR.dirty = 1; return; } /* the page is still moving under the pointer */
-  d->focus(d->a, d->b); ptr_keep(d); }
-void app_pointer_move(float x, float y) { if (x == PTR.x && y == PTR.y) return; PTR.x = x; PTR.y = y; if (ptr_tremor(NOW)) return; ptr_show(); idle_touch_by("pointer moved"); PTR.dirty = 1; }
+  ptrLed = 1; d->focus(d->a, d->b); ptr_keep(d); }
+void app_pointer_move(float x, float y) { if (x == PTR.x && y == PTR.y) return; PTR.x = x; PTR.y = y; if (ptr_tremor(NOW)) return; if (PTR.arrowHid) PTR.wokeAt = NOW; ptr_show(); idle_touch_by("pointer moved"); PTR.dirty = 1; }
 void app_pointer_button(int down, float x, float y) {
   double now = NOW; PTR.x = x; PTR.y = y;
   if (saver_on()) return; /* the screensaver covers the page: nothing under it is pressed */
@@ -864,14 +871,14 @@ void app_pointer_button(int down, float x, float y) {
     const Hit *d = hit_at(x, y); if (!d) return;
     if (d->act) { PTR.down = 3; PTR.act = *d; return; }
     if (d->shield || !d->focus) return;
-    d->focus(d->a, d->b); ptr_keep(d); PTR.down = 1; key_core(K_OK, 1, 0); /* OK pressed (held: the card's menu) */
+    ptrLed = 1; d->focus(d->a, d->b); ptr_keep(d); PTR.down = 1; key_core(K_OK, 1, 0); /* OK pressed (held: the card's menu) */
     return; }
   if (PTR.eatUp) { PTR.eatUp = 0; return; }
   int dn = PTR.down; PTR.down = 0; if (!dn) return;
   if (dn == 2) { extern void player_ptr(int type, float x, float y); player_ptr(2, x, y); return; }
   if (dn == 4) { key_core(K_OK, 0, 0); return; }
   if (dn == 1) { key_core(K_OK, 0, 0); return; }
-  const Hit *d = hit_at(x, y); if (d && hit_same(d, &PTR.act)) PTR.act.act(PTR.act.a, PTR.act.b); /* released on it: its own action */
+  const Hit *d = hit_at(x, y); if (d && hit_same(d, &PTR.act)) { ptrLed = 0; PTR.act.act(PTR.act.a, PTR.act.b); } /* released on it: its own action (domar: what it opens or changes is followed) */
 }
 /* the wheel = the Up/Down arrows (Left/Right for a sideways wheel), one per notch; it leaves the pointer out */
 void app_pointer_wheel(float dx, float dy) { double now = NOW; if (saver_on()) return; if (now - PTR.wheelAt < PTR_WHEEL || (!dx && !dy)) return; PTR.wheelAt = now; idle_touch(); int k = dy > 0 ? K_UP : dy < 0 ? K_DOWN : dx > 0 ? K_RIGHT : K_LEFT; key_core(app_mirror_key(k), 1, 0); key_core(k, 0, 0); }
@@ -888,7 +895,7 @@ void app_key(int k, int down, int repeat) {
     if (down && !repeat) { PTR.okKeyAt = 0; app_pointer_button(1, PTR.x, PTR.y); PTR.okKeyAt = NOW; PTR.okPtr = 1; }
     else if (!down) { PTR.okPtr = 0; app_pointer_button(0, PTR.x, PTR.y); }
     return; } /* (the repeats of a held OK: the press is held as the pointer's own) */
-  if (down && k >= K_LEFT && k <= K_DOWN) { ptr_put_away(); PTR.arrowHid = 1; PTR.arrowAt = NOW; PTR.anchor = 0; } /* every arrow re-arms it, hidden or not */
+  if (down && k >= K_LEFT && k <= K_DOWN) { ptr_put_away(); PTR.arrowHid = 1; PTR.arrowAt = NOW; PTR.anchor = 0; PTR.wokeAt = 0; PTR.dirty = 0; } /* every arrow re-arms it, hidden or not */
   key_core(k, down, repeat);
 }
 /* where the focus is, as far as can be told from outside: the screen, the open sheet, the top bar, the centre of
@@ -927,12 +934,13 @@ static void key_core(int k, int down, int repeat) {
 }
 static void key_dispatch(int k, int repeat) {
   if (k == K_OK && repeat) { return; } /* repeats of a held OK: the hold timer decides */
+  int led = ptrLed; ptrLed = 0; /* domar: a key: the page follows the focus again (an OK that only presses a card: put back below) */
   if (k == K_OK || k == K_BACK) sound_play(SND_FOCUS); /* a press: the same tap as a move */
   if (k == K_OK) orbs_pulse(ORB_OK, 0.6f); else if (k == K_BACK) orbs_pulse(ORB_BACK, 0.6f);
   else if (k == K_RED || k == K_GREEN) { int back = SCR == (k == K_RED ? SCR_SET : SCR_SEARCH) && colorFromSet; orbs_pulse(back ? ORB_BACK : k == K_RED ? ORB_RED : ORB_GREEN, back ? 0.8f : 1); } /* (its own page: they breathe out as it leaves) */
-  if (app_overlay) { if (k == K_OK && menuGuard) return;
+  if (app_overlay) { if (k == K_OK && menuGuard) { ptrLed = led; return; }
     if (k == K_OK && app_overlay->focused) { const Item *fi = app_overlay->focused(); /* an overlay's card (All channels): held, its menu; a tap, its own OK */
-      if (fi) { if (!okHold.down) { okHold.down = 1; okHold.menu = 0; okHold.item = *fi; okHold.has = 1; okHold.at = NOW; okHold.ov = app_overlay; } return; } }
+      if (fi) { if (!okHold.down) { okHold.down = 1; okHold.menu = 0; okHold.item = *fi; okHold.has = 1; okHold.at = NOW; okHold.ov = app_overlay; } ptrLed = led; return; } }
     app_overlay->key(k); return; }
   if (k == K_BACK) { app_back(); return; }
   if (k == K_EXIT) { app_quit(); return; }
@@ -943,7 +951,7 @@ static void key_dispatch(int k, int repeat) {
       app_go(p, NULL, 1); topNav.active = 0; topnav_paint(); return; } topnav_flush(1); if (chipScr(t) != SCR) { topNav.idx = -1; topnav_switch(t); } topNav.idx = t; topnav_enter_content(); return; } /* the remote's colour keys: red Settings, green Search */
   if (topNav.active) { topnav_key(k); return; }
   if (k == K_OK && screens[SCR] && screens[SCR]->focused) { const Item *fi = screens[SCR]->focused();
-    if (fi) { if (!okHold.down) { okHold.down = 1; okHold.menu = 0; okHold.item = *fi; okHold.has = 1; okHold.at = NOW; okHold.ov = NULL; } return; } }
+    if (fi) { if (!okHold.down) { okHold.down = 1; okHold.menu = 0; okHold.item = *fi; okHold.has = 1; okHold.at = NOW; okHold.ov = NULL; } ptrLed = led; return; } }
   if (screens[SCR] && screens[SCR]->key) screens[SCR]->key(k);
 }
 void app_text(const char *utf8) { idle_touch(); if (app_overlay && app_overlay->text) app_overlay->text(utf8); else if (screens[SCR] && screens[SCR]->text) screens[SCR]->text(utf8); }

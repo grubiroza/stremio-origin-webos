@@ -537,17 +537,18 @@ static void tick(float dt) {
   for (int i = 0; i < ncat && i < 32; i++) { tween_to(&catFk[i], S.zone == 0 && i == S.cat ? 1 : 0, 0.18f, EASE_CSS_EASE); tween_to(&catCk[i], S.zone != 0 && i == S.cat ? 1 : 0, 0.18f, EASE_CSS_EASE); tween_tick(&catFk[i], dt); tween_tick(&catCk[i], dt); } /* (the categories' colours too) */
   { int kz = S.zone + (best_speed_busy() ? 10 : 0); if (kz != S.keysZone) { S.keysZone = kz; S.keysAt = app_now(); } } /* each new set of key hints fades in */
   /* the categories scroll only as far as the focus needs; the panel keeps the focused row clear of its bottom edge */
-  float cb = S.catY[S.cat] + 64, cy = cb > COLH - 60 ? cb - COLH + 60 : 0; tween_to(&S.catsY, -cy, 0.22f, EASE_CSS_EASE);
+  int held = app_ptr_hold(); /* domar: pointed at: neither column scrolls under the pointer */
+  float cb = S.catY[S.cat] + 64, cy = cb > COLH - 60 ? cb - COLH + 60 : 0; if (!held) tween_to(&S.catsY, -cy, 0.22f, EASE_CSS_EASE);
   hl_to(&S.hc, S.catY[S.cat], 64, 1, S.zone == 0 ? (cats[S.cat].out ? RGB(0xc7, 0x5a, 0x5a) : ACC) : WHITE_A(24)); /* the section you are in: a light glass mark, not a dark one */
   tween_to(&S.loA, 1, 0.22f, EASE_CSS_EASE); /* (Log out shows who is signed in, at full strength) */
   int oz = S.zone != 0 && S.cat == S.shown && S.idx < S.optN; float oy = 0;
   if (oz) { float b = S.optY[S.idx] + S.optH[S.idx]; if (b > CLH - 72) { oy = b - CLH + 72; float mx = S.optTot - CLH; if (mx < 0) mx = 0; if (oy > mx) oy = mx; } }
-  tween_to(&S.optsY, -oy, 0.22f, EASE_CSS_EASE);
+  if (!held || !oz) tween_to(&S.optsY, -oy, 0.22f, EASE_CSS_EASE); /* (another section pointed at: its rows from their top) */
   if (S.zone != 1) wnBtn = 0;
   hlIn = oz && S.idx < cats[S.cat].n && cats[S.cat].opts[S.idx].sub ? SUBIN : 0; hl_to(&S.ho, oz ? S.optY[S.idx] : 0, oz ? S.optH[S.idx] : 68, oz && !wnBtn, oz && S.idx < cats[S.cat].n && cats[S.cat].opts[S.idx].off ? WHITE_A(34) : oz && S.idx < cats[S.cat].n && cats[S.cat].opts[S.idx].danger ? RGB(0xc7, 0x5a, 0x5a) : ACC); /* a greyed row: a quiet glass highlight, not the accent */
   if (S.zone == 2) { const Setting *o = &cats[S.cat].opts[S.idx]; float pb = S.pick * 72.0f + 68, pt = o->nopts * 72.0f - ROWGAP + 28, py = 0;
     if (pb > PKH - 72) { py = pb - PKH + 72; float mx = pt - PKH; if (mx < 0) mx = 0; if (py > mx) py = mx; }
-    tween_to(&S.pickY, -py, 0.22f, EASE_SNAP); hl_to(&S.hp, S.pick * 72.0f, 68, 1, ACC); }
+    if (!held) tween_to(&S.pickY, -py, 0.22f, EASE_SNAP); hl_to(&S.hp, S.pick * 72.0f, 68, 1, ACC); }
 }
 /* ---- drawing ---- */
 static float stag(int k) { return k <= 2 ? 0 : k <= 7 ? (k - 2) * 0.03f : k <= 10 ? 0.18f : 0.21f; } /* the entrance stagger by child */

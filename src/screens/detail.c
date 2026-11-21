@@ -370,8 +370,9 @@ static void ep_ring(void) {
 }
 static int ep_hidden(int i);
 static void paint(void) {
-  collapse(D.zone == 2 ? 2 : D.zone == 1 ? 1 : 0, 0);
-  if (D.zone == 2) { float x = (D.epIdx > 1 ? D.epIdx - 1 : 0) * EP_W; tween_to(&D.epsX, -x, 0.26f, EASE_OUT); } /* the focused card sits second, the previous one stays in view */
+  int held = app_ptr_hold(); /* domar: pointed at: the page keeps its place and the episodes do not slide */
+  if (!held) collapse(D.zone == 2 ? 2 : D.zone == 1 ? 1 : 0, 0);
+  if (D.zone == 2 && !held) { float x = (D.epIdx > 1 ? D.epIdx - 1 : 0) * EP_W; tween_to(&D.epsX, -x, 0.26f, EASE_OUT); } /* the focused card sits second, the previous one stays in view */
   ep_ring();
   int pr = D.zone == 3; tween_to(&D.pRingA, pr ? 1 : 0, 0.16f, EASE_IN_OUT); if (pr && D.pRingA.v < 0.01f) tween_set(&D.pRingA, 1);
   bg_follow();

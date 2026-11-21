@@ -248,7 +248,7 @@ static void tick(float dt) {
   int act = !topNav.active;
   float x, y, w; key_rect(key_at(S.kr, S.kc), &x, &y, &w);
   if (!S.kfShown) { tween_set(&S.kfx, x); tween_set(&S.kfy, y); tween_set(&S.kfw, w); S.kfShown = 1; } else { tween_to(&S.kfx, x, 0.14f, EASE_OUT); tween_to(&S.kfy, y, 0.14f, EASE_OUT); tween_to(&S.kfw, w, 0.14f, EASE_OUT); }
-  int row = S.ri / SGC; tween_to(&S.gridY, -(row > 1 ? (row - 1) * SROWH : 0), 0.3f, EASE_OUT);
+  int row = S.ri / SGC; if (!app_ptr_hold()) tween_to(&S.gridY, -(row > 1 ? (row - 1) * SROWH : 0), 0.3f, EASE_OUT); /* domar: pointed at: the grid stays */
   if (act && S.zone == 2 && S.ri < S.items.n) { float gx = (app_rtl() ? SB_W - RIGHT_X - 236 - (S.ri % SGC) * 272 : RIGHT_X + (S.ri % SGC) * 272), gy = row * SPITCH; ring_to(&S.ring, gx, gy, 0); } else ring_hide(&S.ring);
 }
 static void ptr_off(void) { if (topNav.active) topNav.active = 0; }
@@ -307,7 +307,7 @@ static void draw(void) {
   ry += text_line_height(24) + 18;
   if (S.nsug) { float cx = 0, xs[6], ws[6]; static char sw[6][128]; static float swW[6]; /* each suggestion measured once */
     for (int i = 0; i < S.nsug; i++) { if (strcmp(sw[i], S.sug[i])) { snprintf(sw[i], sizeof sw[i], "%s", S.sug[i]); swW[i] = text_width(S.sug[i], 24, 600, 0); } ws[i] = swW[i] + 40; if (ws[i] > 340) ws[i] = 340; xs[i] = cx; cx += ws[i] + 12; }
-    float want = S.sugX.v; if (S.zone == 1) { float L = xs[S.si] + want; if (L < 0) want -= L; else if (L + ws[S.si] > GRID_W) want -= L + ws[S.si] - GRID_W; } tween_to(&S.sugX, want, 0.25f, EASE_OUT); /* the focused one whole */
+    float want = S.sugX.v; if (S.zone == 1) { float L = xs[S.si] + want; if (L < 0) want -= L; else if (L + ws[S.si] > GRID_W) want -= L + ws[S.si] - GRID_W; } if (!app_ptr_hold()) tween_to(&S.sugX, want, 0.25f, EASE_OUT); /* the focused one whole */
     gfx_clip_push(rtl ? rx - GRID_W : rx, ry, GRID_W, 60);
     for (int i = 0; i < S.nsug; i++) { int f = act && S.zone == 1 && i == S.si; float x = rtl ? rx - xs[i] - S.sugX.v - ws[i] : rx + xs[i] + S.sugX.v, h = 20 + text_line_height(24);
       float nx = f ? nudge_x(&S.nudge) : 0; hit_add(x, ry, ws[i], h, sug_focus, NULL, i, 0); gfx_rrect(x + nx, ry, ws[i], h, 24, f ? WHITE_A(255) : WHITE_A(18)); text_draw(S.sug[i], x + 20 + nx, ry + 10, 24, 600, f ? RGB(17, 17, 17) : WHITE_A(209), 0, ws[i] - 40, ALIGN_LEFT); }
