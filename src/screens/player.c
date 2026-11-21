@@ -463,8 +463,18 @@ static int pos_idx(void) { int i = atoi(store_get("subsPosition", "1")); return 
 #define POS_MIN 2
 #define POS_MAX 30
 static int pos_pct(void) { int p = atoi(store_get("subsPosPct", "0")); return p >= POS_MIN && p <= POS_MAX ? p : SUB_POS[pos_idx()]; }
-static int size_idx(void) { int i = atoi(store_get("subtitleSize", "2")); return i < 0 || i > 6 ? 2 : i; }
-static const int SUB_SIZES[] = { 72, 80, 100, 120, 140, 160, 180 };
+/* domar: the size in %, 5 % at a time from 70 to 180 (it had seven steps, 20 % apart from 80 on). Kept as the per
+   cent in "subsSizePct"; the old step ("subtitleSize", 0..6) is read while that is not set and kept beside it as the
+   nearest one (a phone's settings, an older build) */
+#define SUBSZ_MIN 70
+#define SUBSZ_MAX 180
+#define SUBSZ_STEP 5
+#define SUBSZ_N ((SUBSZ_MAX - SUBSZ_MIN) / SUBSZ_STEP + 1)
+static const int SUB_SIZES_OLD[7] = { 72, 80, 100, 120, 140, 160, 180 };
+static int size_pct(void) { int p = atoi(store_get("subsSizePct", "0")); if (p >= SUBSZ_MIN && p <= SUBSZ_MAX) return p; int i = atoi(store_get("subtitleSize", "2")); return SUB_SIZES_OLD[i < 0 || i > 6 ? 2 : i]; }
+static int size_idx(void) { int i = (size_pct() - SUBSZ_MIN + SUBSZ_STEP / 2) / SUBSZ_STEP; return i < 0 ? 0 : i >= SUBSZ_N ? SUBSZ_N - 1 : i; }
+static void size_set(int idx) { int p = SUBSZ_MIN + idx * SUBSZ_STEP, best = 0; char b[8]; snprintf(b, sizeof b, "%d", p); store_set("subsSizePct", b);
+  for (int i = 1; i < 7; i++) if (abs(SUB_SIZES_OLD[i] - p) < abs(SUB_SIZES_OLD[best] - p)) best = i; snprintf(b, sizeof b, "%d", best); store_set("subtitleSize", b); }
 static const char *SUB_COLORS[] = { "#ffffff", "#ffe600", "#00e5ff" }, *SUB_BGS[] = { "0", "1", ".6" };
 /* the lines' brightness (from PR #39, gmarques33): white a little grey, softer on an OLED in a dark room; the colours go
    toward black, never see-through (readable over a bright scene) */
@@ -570,7 +580,7 @@ static void ass_sync(void) {
   if (w > 0 && h > 0 && !strcmp(P.aspect, "fit")) { float a = (float)w / h; if (a > SB_W / SB_H) { vh = SB_W / a; vy = (SB_H - vh) / 2; } else { vw = SB_H * a; vx = (SB_W - vw) / 2; } }
   VidState vs = video_state(); double t = video_time() - P.subDelay, rate = 1; if (ext) t = sync_map(t, &rate);
   asssubs_set_line(pos_pct() > 8 ? pos_pct() - 8 : 0); /* the Position setting: 8 % (the default) leaves styled lines where the script puts them */
-  asssubs_tick(t, rate, vs == VID_PLAYING && !video_settling(), video_fps(), vx, vy, vw, vh, w, h, SUB_SIZES[size_idx()] / 100.0f);
+  asssubs_tick(t, rate, vs == VID_PLAYING && !video_settling(), video_fps(), vx, vy, vw, vh, w, h, size_pct() / 100.0f);
 }
 static const char *skip_mode(void) { return store_get("skipIntro", "auto"); } /* the intro / recap button: auto, show, off */
 static void sync_auto_arm(void);
@@ -1623,7 +1633,7 @@ static void tray_data(void) {
     }
     if (!P.isTrailer) P.tray.ncols = 2; /* (the lists alone, or the style and the delay) */
     if (styleTab || P.isTrailer) {
-    int ci = color_idx(); x = col_add(cs, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Size")); snprintf(x->vl, 48, "%d%%", SUB_SIZES[size_idx()]); snprintf(x->u, 1024, "size");
+    int ci = color_idx(); x = col_add(cs, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Size")); snprintf(x->vl, 48, "%d%%", size_pct()); snprintf(x->u, 1024, "size");
     { int fl = subfont_lat(), fa = subfont_ar(); x = col_add(cs, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Font")); snprintf(x->vl, 48, "%s", fl ? SUBF_LAT[fl] : T("Default")); x->vwt = text_sub_weight(700, fl, 0); snprintf(x->u, 1024, "font");
       if (sub_is_arabic()) { x = col_add(cs, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Arabic font")); snprintf(x->vl, 48, "%s  \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7", fa ? SUBF_AR[fa] : T("Default")); x->vwt = text_sub_weight(700, 0, fa); snprintf(x->u, 1024, "fontar"); } } /* (the Arabic font only while Arabic subtitles are on) */ /* (each in its own font; the Arabic one with a sample beside its name) */
     x = col_add(cs, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Colour")); snprintf(x->u, 1024, "color"); /* colour and background: shown by their swatch (drawn with the column) */
@@ -1725,7 +1735,7 @@ static void tray_back(void) {
   close_tray();
 }
 static void adjust(const char *k) {
-  if (!strcmp(k, "size")) { char v[4]; snprintf(v, sizeof v, "%d", (size_idx() + 1) % 7); store_set("subtitleSize", v); }
+  if (!strcmp(k, "size")) size_set((size_idx() + 1) % SUBSZ_N);
   else if (!strcmp(k, "color")) { int ci = color_idx(); store_set("subsColor", SUB_COLORS[((ci < 0 ? 0 : ci) + 1) % 3]); }
   else if (!strcmp(k, "bg")) store_set("subsBgStyle", SUB_BGS[(bg_idx() + 1) % 3]);
   render_tray(0);
@@ -1835,10 +1845,10 @@ static void style_back(int kind) { /* the subtitle tray again, its Style tab, th
   subTab = (P.nSubAddons > 0 || P.nAdx > 0) ? 2 : 1; show_osd(1); open_tray(4); P.tray.zone = 2; P.tray.c = 0; /* (the controls with it, as it was opened: a tray never floats alone) */
   static const char *const U[7] = { "pos", "size", "color", "bg", "bright", "font", "fontar" }; TCol *c = &P.tray.cols[0]; for (int i = 0; i < c->n; i++) if (!strcmp(c->items[i].u, U[kind >= 0 && kind < 7 ? kind : 0])) P.tray.r[0] = i; }
 static int style_idx(void) { int c = color_idx(); return P.styK == 1 ? size_idx() : P.styK == 2 ? (c < 0 ? 0 : c) : P.styK == 4 ? bright_idx() : P.styK == 5 ? subfont_lat() : P.styK == 6 ? subfont_ar() : bg_idx(); }
-static int style_n(void) { return P.styK == 1 ? 7 : P.styK == 4 ? 4 : P.styK >= 5 ? SUBF_N : 3; }
+static int style_n(void) { return P.styK == 1 ? SUBSZ_N : P.styK == 4 ? 4 : P.styK >= 5 ? SUBF_N : 3; }
 static void style_change(int d) {
   int i = style_idx() + d; if (i < 0 || i >= style_n()) { nudge_start(&P.nudge, d > 0 ? K_RIGHT : K_LEFT); return; }
-  if (P.styK == 1) { char v[4]; snprintf(v, sizeof v, "%d", i); store_set("subtitleSize", v); } else if (P.styK == 2) store_set("subsColor", SUB_COLORS[i]); else if (P.styK == 4) store_set("subsBright", SUB_BRIGHT[i]); else if (P.styK >= 5) { char v[4]; snprintf(v, sizeof v, "%d", i); store_set(P.styK == 5 ? "subsFont" : "subsFontAr", v); } else store_set("subsBgStyle", SUB_BGS[i]);
+  if (P.styK == 1) size_set(i); else if (P.styK == 2) store_set("subsColor", SUB_COLORS[i]); else if (P.styK == 4) store_set("subsBright", SUB_BRIGHT[i]); else if (P.styK >= 5) { char v[4]; snprintf(v, sizeof v, "%d", i); store_set(P.styK == 5 ? "subsFont" : "subsFontAr", v); } else store_set("subsBgStyle", SUB_BGS[i]);
   P.posAt = now_(); }
 static void pos_close(void) { P.mode = 0; mo_to(&P.posA, 0, .2f, C_EASE, 0); }
 static void pos_change(int d) { int v = pos_pct() + d; if (v < POS_MIN || v > POS_MAX) { nudge_start(&P.nudge, d > 0 ? K_UP : K_DOWN); return; } char b[8]; snprintf(b, sizeof b, "%d", v); store_set("subsPosPct", b); P.posAt = now_(); }
@@ -2648,7 +2658,7 @@ static void draw_art(void) {
 typedef struct { unsigned ser; int px; uint32_t col, ol; float bo; } SubStyle;
 static const SubStyle *sub_style(void) {
   static SubStyle st; if (st.ser == store_serial() && st.ser) return &st;
-  st.ser = store_serial(); st.px = (int)(38 * SUB_SIZES[size_idx()] / 100.0f + 0.5f); st.col = hexcol(store_get("subsColor", "#ffffff")); st.ol = hexcol(store_get("subsOutlineColor", "#000000")); st.bo = (float)atof(SUB_BGS[bg_idx()]);
+  st.ser = store_serial(); st.px = (int)(38 * size_pct() / 100.0f + 0.5f); st.col = hexcol(store_get("subsColor", "#ffffff")); st.ol = hexcol(store_get("subsOutlineColor", "#000000")); st.bo = (float)atof(SUB_BGS[bg_idx()]);
   { float k = atoi(SUB_BRIGHT[bright_idx()]) / 100.0f; st.col = col_dim(st.col, k); st.ol = col_dim(st.ol, k); asssubs_brightness(k); } /* (the brightness: plain, embedded and styled lines alike) */
   return &st;
 }
@@ -3153,7 +3163,7 @@ static void draw_tray(void) {
         int dk = !it->tool ? 0 : !strcmp(it->u, "size") ? 1 : !strcmp(it->u, "color") ? 2 : !strcmp(it->u, "bg") ? 3 : 0; float va = TM.vkC == c && it->tool && !strcmp(TM.vkU, it->u) ? TM.vkA.v : 1, vy0 = dk ? -5 : 0;
         float right = 6 + CPW - 18; if (dk == 2 || dk == 3) { swatch_draw(dk - 2, dk == 2 ? (color_idx() < 0 ? 0 : color_idx()) : bg_idx(), right - 13, yy + h / 2, 13); right -= 26 + 10; }
         if (it->vl[0]) { if (it->vw <= 0) it->vw = text_width(it->vl, 22, it->vwt ? it->vwt : 700, 0); float vw = it->vw; text_draw(it->vl, right, yy + h / 2 - text_line_height(22) / 2.0f + vy0 + 6 * (1 - va), 22, it->vwt ? it->vwt : 700, col_alpha(ACC3, va), 0, 0, ALIGN_RIGHT);
-          if (dk == 1) cycle_dots(dk, 7, size_idx(), right, yy + h / 2 + 14, 9, 2.5f, WHITE_A(64), ACC3, 1);
+          if (dk == 1) cycle_dots(dk, 7, size_idx() * 6 / (SUBSZ_N - 1), right, yy + h / 2 + 14, 9, 2.5f, WHITE_A(64), ACC3, 1);
           right -= vw + 10; } if (it->sw) { gfx_circle(right - 9, yy + h / 2, 9, it->sw); gfx_ring(right - 18, yy + h / 2 - 9, 18, 18, 9, 2, BLACK_A(77)); right -= 18 + 10; }
         int px = it->tool ? 23 : 24;
         if (it->sub[0] && it->tool) { float ly = yy + 12; text_draw(it->lb, tx, ly, px, 700, WHITE_A(255), 0, right - tx - 4, ALIGN_LEFT); text_draw_wrapped(it->sub, tx, ly + px * 1.25f + 2, 6 + CPW - 18 - tx, 2, 21, 600, WHITE_A(184), 0, ALIGN_LEFT, 26); } /* Auto-sync: what it did, on up to two lines */
@@ -3394,17 +3404,19 @@ void player_dev_fontcard(int k) { P.styK = k; P.posAt = 0; font_card_draw(1); } 
 static void style_draw(float a) { /* [ value · what it is ]  [ the choices, the one in use lit ]  |  [ Done ] */
   if (P.styK >= 5) { font_card_draw(a); return; }
   static const char *const CN[3] = { "White", "Yellow", "Cyan" }, *const BN[3] = { "None", "Solid", "Transparent" }, *const TT[5] = { "", "Subtitle size", "Subtitle colour", "Subtitle background", "Subtitle brightness" };
-  int n = style_n(), cur = style_idx(); const float h = 120, VW = 250, B = 76; static TMemo dW; const char *dn = T("Done"); float dw = tm_width(&dW, dn, 26, 700, 0) + 64;
-  float ow[7], tot = 0; for (int i = 0; i < n; i++) { if (P.styK == 1) { char v[8]; snprintf(v, sizeof v, "%d%%", SUB_SIZES[i]); ow[i] = text_width(v, 22, 700, 0) + 34; } else ow[i] = P.styK == 2 ? 56 : 96; tot += ow[i] + (i ? 12 : 0); }
+  int n = style_n(), cur = style_idx(), first = 0; const float h = 120, VW = 250, B = 76; static TMemo dW;
+  if (P.styK == 1) { first = cur - 3; if (first > n - 7) first = n - 7; if (first < 0) first = 0; n = 7; } /* domar: the sizes are many: seven shown, the one in use among them, each as wide as the widest */
+  const char *dn = T("Done"); float dw = tm_width(&dW, dn, 26, 700, 0) + 64;
+  float ow[7], tot = 0; for (int i = 0; i < n; i++) { if (P.styK == 1) ow[i] = text_width("100%", 22, 700, 0) + 34; else ow[i] = P.styK == 2 ? 56 : 96; tot += ow[i] + (i ? 12 : 0); }
   float w = 28 + VW + 24 + tot + 28 + 2 + 28 + dw + 28, x = SB_W / 2 - w / 2, y = 44 - 24 * (1 - a), cy = y + h / 2;
   gfx_opacity_push(a); gfx_offset_push(nudge_x(&P.nudge), nudge_y(&P.nudge));
   gfx_shadow(x, y + 14, w, h, 30, 40, BLACK_A(110)); gfx_rrect(x, y, w, h, 30, RGBA(18, 16, 28, 222)); gfx_rrect_v(x, y, w, h, 30, WHITE_A(18), WHITE_A(4)); gfx_ring(x, y, w, h, 30, 1, WHITE_A(36));
-  { char v[32]; if (P.styK == 1) snprintf(v, sizeof v, "%d %%", SUB_SIZES[cur]); else if (P.styK == 4) snprintf(v, sizeof v, "%s %%", SUB_BRIGHT[cur]); else snprintf(v, sizeof v, "%s", T(P.styK == 2 ? CN[cur] : BN[cur]));
+  { char v[32]; if (P.styK == 1) snprintf(v, sizeof v, "%d %%", size_pct()); else if (P.styK == 4) snprintf(v, sizeof v, "%s %%", SUB_BRIGHT[cur]); else snprintf(v, sizeof v, "%s", T(P.styK == 2 ? CN[cur] : BN[cur]));
     float e = (float)((now_() - P.posAt) / 0.22); e = e < 0 ? 0 : e > 1 ? 1 : e; float lift = 6 * (1 - ease_apply(EASE_OUT, e)), vx = x + 28;
     text_draw(v, vx + VW / 2, cy - 30 - lift, 36, 800, WHITE_A(255), -0.4f, VW, ALIGN_CENTER); text_draw(T(TT[P.styK]), vx + VW / 2, cy + 18, 20, 600, WHITE_A(160), 0.3f, VW, ALIGN_CENTER); }
   float ox = x + 28 + VW + 24; const SubStyle *st = sub_style();
-  for (int i = 0; i < n; i++) { int on = i == cur; float bw = ow[i], bh = P.styK == 2 ? 56 : 58, by = cy - bh / 2;
-    if (P.styK == 1) { char v[8]; snprintf(v, sizeof v, "%d%%", SUB_SIZES[i]); if (on) { lglass_accent(ox, by, bw, bh, bh / 2, 1); } else gfx_rrect(ox, by, bw, bh, bh / 2, WHITE_A(22));
+  for (int i = 0; i < n; i++) { int on = first + i == cur; float bw = ow[i], bh = P.styK == 2 ? 56 : 58, by = cy - bh / 2;
+    if (P.styK == 1) { char v[8]; snprintf(v, sizeof v, "%d%%", SUBSZ_MIN + (first + i) * SUBSZ_STEP); if (on) { lglass_accent(ox, by, bw, bh, bh / 2, 1); } else gfx_rrect(ox, by, bw, bh, bh / 2, WHITE_A(22));
       text_draw(v, ox + bw / 2, cy - text_line_height(22) / 2, 22, 700, on ? ACC_FG : WHITE_A(225), 0, 0, ALIGN_CENTER); }
     else if (P.styK == 2) { float r = 22, ccx = ox + bw / 2; if (on) gfx_ring_out(ccx - r - 5, cy - r - 5, 2 * r + 10, 2 * r + 10, r + 5, 3, ACC2); gfx_circle(ccx, cy, r, hexcol(SUB_COLORS[i])); gfx_ring(ccx - r, cy - r, 2 * r, 2 * r, r, 1.5f, BLACK_A(70));
       if (on) icon_draw("check", ccx - 11, cy - 11, 22, RGB(20, 18, 28)); }

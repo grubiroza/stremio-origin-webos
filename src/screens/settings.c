@@ -69,7 +69,6 @@ static const Opt CLOCKO[] = { { "24", "24-hour (15:30)" }, { "12", "12-hour (3:3
 static const Opt SEEK[] = { { "5", "5s" }, { "10", "10s" }, { "15", "15s" }, { "20", "20s" }, { "30", "30s" } };
 static const Opt DTSM[] = { { "auto", "Auto" }, { "convert", "Convert" }, { "off", "Off" } }; /* DTS sound: found out by playing, always converted, or left to the TV */
 static const Opt ASPECT[] = { { "fit", "Original" }, { "fill", "Fill the screen" }, { "zoom", "Zoom" } };
-static const Opt SIZES[] = { { "0", "72%" }, { "1", "80%" }, { "2", "100%" }, { "3", "120%" }, { "4", "140%" }, { "5", "160%" }, { "6", "180%" } };
 static const Opt COLORS[] = { { "#ffffff", "White" }, { "#ffe600", "Yellow" }, { "#00e5ff", "Cyan" } };
 static const Opt OUTL[] = { { "#000000", "Black" }, { "#ffffff", "White" } };
 static const Opt SPOILO[] = { { "off", "Off" }, { "blur", "Blur pictures" }, { "hide", "Blur pictures and text" } };
@@ -243,7 +242,10 @@ static void build(void) {
   set_s(&subsS[1], "subsLang2", "Second subtitle language", "Chosen when a film has none in the first", LANG_OPTS, NLANGOPTS, ""); /* domar: as the official apps' secondary language */
   { static const Opt SM[] = { { "all", "All subtitles" }, { "forced", "Forced only" } }; /* (PR #50: forced tracks are the lines in another language and the signs) */
     set_s(&subsS[2], "subsMode", "Subtitle preference", "Forced only: just the lines in another language and the signs, from a forced track", SM, 2, "all"); }
-  set_s(&subsS[3], "subtitleSize", "Size", "Also in the player, under Subtitles", SIZES, 7, "2");
+  /* domar: the size in %, 5 % at a time from 70 to 180 (seven steps before, 20 % apart); the old step carries over */
+  { static Opt SZO[23]; static char sv[23][4], sl[23][8]; for (int i = 0; i < 23; i++) { snprintf(sv[i], 4, "%d", 70 + i * 5); snprintf(sl[i], 8, "%d%%", 70 + i * 5); SZO[i].v = sv[i]; SZO[i].lb = sl[i]; }
+    if (!store_get("subsSizePct", "")[0]) { static const int OLD[7] = { 70, 80, 100, 120, 140, 160, 180 }; int i = atoi(store_get("subtitleSize", "2")); char b[8]; snprintf(b, sizeof b, "%d", OLD[i < 0 || i > 6 ? 2 : i]); store_set("subsSizePct", b); }
+    set_s(&subsS[3], "subsSizePct", "Size", "Also in the player, under Subtitles", SZO, 23, "100"); }
   { static Opt FL[SUBF_N], FA[SUBF_N]; static char fv[SUBF_N][4]; for (int i = 0; i < SUBF_N; i++) { snprintf(fv[i], sizeof fv[i], "%d", i); FL[i].v = FA[i].v = fv[i]; FL[i].lb = SUBF_LAT[i]; FA[i].lb = SUBF_AR[i]; } /* (the fonts by name; Default the app's own) */
     set_s(&subsS[4], "subsFont", "Font", "Also in the player, under Subtitles", FL, SUBF_N, "0"); set_s(&subsS[5], "subsFontAr", "Arabic font", "For subtitles in Arabic", FA, SUBF_N, "0"); }
   set_s(&subsS[6], "subsColor", "Colour", "", COLORS, 3, "#ffffff");
@@ -661,7 +663,7 @@ static void preview_subs(float x, float y, float w, float h) {
   if (bt) { float z = 0.06f + 0.05f * kb, du = (u1 - u0) * z, dv = (v1 - v0) * z, px = (u1 - u0) * 0.04f * sinf(t * 0.13f); /* a slow drift across the still */
     gfx_image(bt, x, y, w, h, 18, WHITE_A(255), u0 + du + px, v0 + dv, u1 - du + px, v1 - dv); } else gfx_rrect(x, y, w, h, 18, RGB(0x1c, 0x1a, 0x24));
   gfx_rrect(x, y, w, h, 18, col_alpha(PAGE, 0.25f));
-  int sz = atoi(store_get("subtitleSize", "2")); static const int SZ[] = { 72, 80, 100, 120, 140, 160, 180 }; if (sz < 0 || sz > 6) sz = 2; int px = (int)(34 * SZ[sz] / 100.0f + 0.5f);
+  int pc = atoi(store_get("subsSizePct", "0")); if (pc < 70 || pc > 180) { int sz = atoi(store_get("subtitleSize", "2")); static const int SZ[] = { 72, 80, 100, 120, 140, 160, 180 }; pc = SZ[sz < 0 || sz > 6 ? 2 : sz]; } int px = (int)(34 * pc / 100.0f + 0.5f); /* domar: the size as a per cent */
   uint32_t col = hexcol(store_get("subsColor", "#ffffff")), ol = hexcol(store_get("subsOutlineColor", "#000000")); float bo = (float)atof(store_get("subsBgStyle", "0"));
   { float k = atoi(store_get("subsBright", "100")) / 100.0f; if (k > 0 && k < 1) { col = (col & 0xff000000u) | ((uint32_t)(((col >> 16) & 255) * k) << 16) | ((uint32_t)(((col >> 8) & 255) * k) << 8) | (uint32_t)((col & 255) * k); ol = (ol & 0xff000000u) | ((uint32_t)(((ol >> 16) & 255) * k) << 16) | ((uint32_t)(((ol >> 8) & 255) * k) << 8) | (uint32_t)((ol & 255) * k); } } /* (the brightness, as the player draws it) */
   unsigned sig = (unsigned)px * 2654435761u ^ col ^ (ol << 1) ^ (unsigned)(bo * 1000); if (sig != subSig) { if (subSig) { subAt = app_now(); orbs_push(&subOrbs, ORB_DONE, 0.5f); } subSig = sig; }
