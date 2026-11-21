@@ -1839,7 +1839,8 @@ static void dly_key(int k) {
 /* every subtitle style is set where it can be seen: the tray steps away, the subtitles (or a sample line) sit where they
    will, the card at the top holds that style's choices; size, colour and background move with Left / Right and show at
    once, the height with Up / Down */
-static void style_open(int kind) { close_tray(); P.osd = 0; P.mode = 5; P.styK = kind; P.posAt = 0; mo_to(&P.posA, 1, .28f, C_OUT, 0); }
+static int szFirst = -1; /* domar: the first of the seven sizes shown (-1: set around the one in use when the card opens) */
+static void style_open(int kind) { close_tray(); P.osd = 0; P.mode = 5; P.styK = kind; szFirst = -1; P.posAt = 0; mo_to(&P.posA, 1, .28f, C_OUT, 0); }
 static void pos_open(void) { style_open(0); }
 static void style_back(int kind) { /* the subtitle tray again, its Style tab, the row of the style just set */
   subTab = (P.nSubAddons > 0 || P.nAdx > 0) ? 2 : 1; show_osd(1); open_tray(4); P.tray.zone = 2; P.tray.c = 0; /* (the controls with it, as it was opened: a tray never floats alone) */
@@ -1856,6 +1857,10 @@ static void pos_key(int k) {
   if (P.styK) { if (k == K_LEFT || k == K_RIGHT) style_change(app_mirror_key(k) == K_RIGHT ? 1 : -1); else if (k == K_OK) pos_close(); else if (k == K_UP || k == K_DOWN) nudge_start(&P.nudge, k); return; }
   if (k == K_UP) pos_change(1); else if (k == K_DOWN) pos_change(-1); else if (k == K_OK) pos_close(); else if (k == K_LEFT || k == K_RIGHT) nudge_start(&P.nudge, k); }
 static struct { float y, h, ux, uw, dx, dw, ox, ow; } PZ; /* the card's parts, for the pointer */
+/* domar: the style cards' parts too (size, colour, background, brightness, fonts): the choices shown and Done. They took
+   the remote's keys only, and on a TV whose pointer is out OK is a click where it points: Done did nothing, and the
+   card could only be left with Back. A click on a choice takes it, on Done or beside the card closes it */
+static struct { float x, y, w, h; int n, first; float ox[7], ow[7], oy, oh, dx, dw, dy, dh; } STZ;
 static void hub_from_player(void) { close_tray(); P.osd = 0; P.mode = 6; hub_open(1, P.id); } /* the live hub over the channel playing (mode 6) */
 static void act(const char *id) {
   if (!strcmp(id, "pp")) toggle(); else if (!strcmp(id, "beg")) from_start(); else if (!strcmp(id, "asp")) next_aspect(); else if (!strcmp(id, "nxt")) next_auto(); else if (!strcmp(id, "cc")) cc_toggle();
@@ -3293,7 +3298,11 @@ void player_ptr(int type, float x, float y) {
   int onBar = y >= barTop && y <= barTop + L25, onBtns = y >= SB_H - 54 - 94 && y <= SB_H - 54;
   if (type == 2) { if (P.barDown && onBar) { ptr_hv(1, x); double d = dur(); if (d > 0) { P.seekT = P.hvP * d; P.seekScrub = 1; commit_seek(); } } P.barDown = 0; return; } /* the bar seeks on release, where the pointer is then */
   int down = type == 1;
-  if (P.mode == 5 && P.styK) return; /* (the style card: the remote's keys) */
+  if (P.mode == 5 && P.styK) { /* domar: the style card takes the pointer too: a choice, Done, beside the card = Done */
+    if (down && STZ.h > 0) {
+      if (in_box(x, y, STZ.dx, STZ.dy, STZ.dw, STZ.dh) || !in_box(x, y, STZ.x, STZ.y, STZ.w, STZ.h)) pos_close();
+      else if (y >= STZ.oy && y <= STZ.oy + STZ.oh) for (int i = 0; i < STZ.n; i++) if (x >= STZ.ox[i] && x <= STZ.ox[i] + STZ.ow[i]) { int d = STZ.first + i - style_idx(); if (d) style_change(d); break; } }
+    return; }
   if (P.mode == 5) { if (down && PZ.h > 0 && y >= PZ.y && y <= PZ.y + PZ.h) { if (x >= PZ.ux && x <= PZ.ux + PZ.uw) pos_change(y < PZ.y + PZ.h / 2 ? 1 : -1); else if (x >= PZ.ox && x <= PZ.ox + PZ.ow) pos_close(); } return; } /* the position card: its keys and Done */
   if (P.mode == 4) { /* the delay card: its buttons; elsewhere the picture stays as it is */
     if (DG.h > 0 && y >= DG.y && y <= DG.y + DG.h) for (int i = 0; i < 4; i++) if (x >= DG.x[i] && x <= DG.x[i] + DG.w[i]) { if (P.dlyF != i) { P.dlyF = i; mo_to(&P.dlyR, (float)i, .18f, C_OUT, 0); } if (down) dly_act(i); return; }
@@ -3393,11 +3402,12 @@ static void font_card_draw(float a) {
   { const char *nm = cur ? (ar ? SUBF_AR[cur] : SUBF_LAT[cur]) : T("Default"); float e = (float)((now_() - P.posAt) / 0.22); e = e < 0 ? 0 : e > 1 ? 1 : e; float lift = 6 * (1 - ease_apply(EASE_OUT, e)), vx = x + 28;
     char nb[96]; snprintf(nb, sizeof nb, ar ? "%s  \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7" : "%s", nm); text_draw(nb, vx + VW / 2, cy - 30 - lift, 32, text_sub_weight(600, ar ? 0 : cur, ar ? cur : 0), WHITE_A(255), 0, VW, ALIGN_CENTER); text_draw(T(ar ? "Arabic subtitle font" : "Subtitle font"), vx + VW / 2, cy + 18, 20, 600, WHITE_A(160), 0.3f, VW, ALIGN_CENTER); }
   float ox = x + 28 + VW + 24; const char *smp = ar ? "\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7" : "Aa"; /* (the Arabic sample: the same word everywhere, مرحبا) */
-  for (int k = 0; k < 5; k++) { int i = lo + k, on = i == cur; float bh = 58, by = cy - bh / 2; int fw = text_sub_weight(600, ar ? 0 : i, ar ? i : 0);
+  STZ.x = x; STZ.y = y; STZ.w = w; STZ.h = h; STZ.n = 5; STZ.first = lo; STZ.oy = cy - 29; STZ.oh = 58;
+  for (int k = 0; k < 5; k++) { int i = lo + k, on = i == cur; float bh = 58, by = cy - bh / 2; STZ.ox[k] = ox; STZ.ow[k] = CW; int fw = text_sub_weight(600, ar ? 0 : i, ar ? i : 0);
     gfx_rrect_v(ox, by, CW, bh, 14, RGB(46, 48, 60), RGB(14, 14, 20)); text_draw(smp, ox + CW / 2, cy - text_line_height(28) / 2, 28, fw, WHITE_A(240), 0, CW - 12, ALIGN_CENTER);
     if (on) gfx_ring_out(ox, by, CW, bh, 14, 3, ACC2); else gfx_ring(ox, by, CW, bh, 14, 1, WHITE_A(40)); ox += CW + 12; }
   float sep = ox - 12 + 28; gfx_rect(sep, cy - 30, 1.5f, 60, WHITE_A(40));
-  float dx = sep + 2 + 28; lglass_accent(dx, cy - B / 2, dw, B, B / 2, 1); text_draw(dn, dx + dw / 2, cy - text_line_height(26) / 2.0f, 26, 700, ACC_FG, 0, 0, ALIGN_CENTER);
+  float dx = sep + 2 + 28; STZ.dx = dx; STZ.dw = dw; STZ.dy = cy - B / 2; STZ.dh = B; lglass_accent(dx, cy - B / 2, dw, B, B / 2, 1); text_draw(dn, dx + dw / 2, cy - text_line_height(26) / 2.0f, 26, 700, ACC_FG, 0, 0, ALIGN_CENTER);
   { float hy = y + h + 22; key_hint(SB_W / 2 - 60, hy, K_LEFT, NULL, WHITE_A(150), 0); key_hint(SB_W / 2 + 22, hy, K_RIGHT, NULL, WHITE_A(150), 0); }
   gfx_offset_pop(); gfx_opacity_pop(); }
 void player_dev_fontcard(int k) { P.styK = k; P.posAt = 0; font_card_draw(1); } /* (development: SB_FONTCARD=5|6 draws the fonts' card over any screen) */
@@ -3405,7 +3415,7 @@ static void style_draw(float a) { /* [ value · what it is ]  [ the choices, the
   if (P.styK >= 5) { font_card_draw(a); return; }
   static const char *const CN[3] = { "White", "Yellow", "Cyan" }, *const BN[3] = { "None", "Solid", "Transparent" }, *const TT[5] = { "", "Subtitle size", "Subtitle colour", "Subtitle background", "Subtitle brightness" };
   int n = style_n(), cur = style_idx(), first = 0; const float h = 120, VW = 250, B = 76; static TMemo dW;
-  if (P.styK == 1) { first = cur - 3; if (first > n - 7) first = n - 7; if (first < 0) first = 0; n = 7; } /* domar: the sizes are many: seven shown, the one in use among them, each as wide as the widest */
+  if (P.styK == 1) { if (szFirst < 0) szFirst = cur - 3; if (cur < szFirst) szFirst = cur; if (cur > szFirst + 6) szFirst = cur - 6; if (szFirst > n - 7) szFirst = n - 7; if (szFirst < 0) szFirst = 0; first = szFirst; n = 7; } /* domar: the sizes are many: seven shown, each as wide as the widest; the lit one walks along them, the row slides only at its ends (kept in the middle, it looked as if nothing moved) */
   const char *dn = T("Done"); float dw = tm_width(&dW, dn, 26, 700, 0) + 64;
   float ow[7], tot = 0; for (int i = 0; i < n; i++) { if (P.styK == 1) ow[i] = text_width("100%", 22, 700, 0) + 34; else ow[i] = P.styK == 2 ? 56 : 96; tot += ow[i] + (i ? 12 : 0); }
   float w = 28 + VW + 24 + tot + 28 + 2 + 28 + dw + 28, x = SB_W / 2 - w / 2, y = 44 - 24 * (1 - a), cy = y + h / 2;
@@ -3415,7 +3425,8 @@ static void style_draw(float a) { /* [ value · what it is ]  [ the choices, the
     float e = (float)((now_() - P.posAt) / 0.22); e = e < 0 ? 0 : e > 1 ? 1 : e; float lift = 6 * (1 - ease_apply(EASE_OUT, e)), vx = x + 28;
     text_draw(v, vx + VW / 2, cy - 30 - lift, 36, 800, WHITE_A(255), -0.4f, VW, ALIGN_CENTER); text_draw(T(TT[P.styK]), vx + VW / 2, cy + 18, 20, 600, WHITE_A(160), 0.3f, VW, ALIGN_CENTER); }
   float ox = x + 28 + VW + 24; const SubStyle *st = sub_style();
-  for (int i = 0; i < n; i++) { int on = first + i == cur; float bw = ow[i], bh = P.styK == 2 ? 56 : 58, by = cy - bh / 2;
+  STZ.x = x; STZ.y = y; STZ.w = w; STZ.h = h; STZ.n = n; STZ.first = first; STZ.oy = cy - 29; STZ.oh = 58;
+  for (int i = 0; i < n; i++) { int on = first + i == cur; float bw = ow[i], bh = P.styK == 2 ? 56 : 58, by = cy - bh / 2; STZ.ox[i] = ox; STZ.ow[i] = bw;
     if (P.styK == 1) { char v[8]; snprintf(v, sizeof v, "%d%%", SUBSZ_MIN + (first + i) * SUBSZ_STEP); if (on) { lglass_accent(ox, by, bw, bh, bh / 2, 1); } else gfx_rrect(ox, by, bw, bh, bh / 2, WHITE_A(22));
       text_draw(v, ox + bw / 2, cy - text_line_height(22) / 2, 22, 700, on ? ACC_FG : WHITE_A(225), 0, 0, ALIGN_CENTER); }
     else if (P.styK == 2) { float r = 22, ccx = ox + bw / 2; if (on) gfx_ring_out(ccx - r - 5, cy - r - 5, 2 * r + 10, 2 * r + 10, r + 5, 3, ACC2); gfx_circle(ccx, cy, r, hexcol(SUB_COLORS[i])); gfx_ring(ccx - r, cy - r, 2 * r, 2 * r, r, 1.5f, BLACK_A(70));
@@ -3431,13 +3442,14 @@ static void style_draw(float a) { /* [ value · what it is ]  [ the choices, the
       if (on) gfx_ring_out(ox, by, bw, bh, 14, 3, ACC2); else gfx_ring(ox, by, bw, bh, 14, 1, WHITE_A(40)); }
     ox += bw + 12; }
   float sep = ox - 12 + 28; gfx_rect(sep, cy - 30, 1.5f, 60, WHITE_A(40));
-  float dx = sep + 2 + 28; lglass_accent(dx, cy - B / 2, dw, B, B / 2, 1); text_draw(dn, dx + dw / 2, cy - text_line_height(26) / 2.0f, 26, 700, ACC_FG, 0, 0, ALIGN_CENTER);
+  float dx = sep + 2 + 28; STZ.dx = dx; STZ.dw = dw; STZ.dy = cy - B / 2; STZ.dh = B; lglass_accent(dx, cy - B / 2, dw, B, B / 2, 1); text_draw(dn, dx + dw / 2, cy - text_line_height(26) / 2.0f, 26, 700, ACC_FG, 0, 0, ALIGN_CENTER);
   { float hy = y + h + 22; key_hint(SB_W / 2 - 60, hy, K_LEFT, NULL, WHITE_A(150), 0); key_hint(SB_W / 2 + 22, hy, K_RIGHT, NULL, WHITE_A(150), 0); } /* (the keys that change it) */
   gfx_offset_pop(); gfx_opacity_pop();
 }
 static void pos_draw(void) {
-  float a = P.posA.v; if (a <= 0.004f) { PZ.h = 0; return; }
+  float a = P.posA.v; if (a <= 0.004f) { PZ.h = 0; STZ.h = 0; return; }
   if (P.styK) { PZ.h = 0; style_draw(a); return; }
+  STZ.h = 0;
   /* [ 12 % · Subtitle position ]  [Up Higher / Down Lower]  |  [ Done ]: the height large, the keys beside it */
   const float h = 120, VW = 250; static TMemo dW, hW1, hW2; const char *dn = T("Done"), *hu = T("Higher"), *hd = T("Lower");
   float dw = tm_width(&dW, dn, 26, 700, 0) + 64, hw = 38 + 10 + fmaxf(tm_width(&hW1, hu, 22, 600, 0), tm_width(&hW2, hd, 22, 600, 0));
