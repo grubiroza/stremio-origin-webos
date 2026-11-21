@@ -433,6 +433,7 @@ static void try_resume(void) {
 
 /* ---- subtitles ---- */
 static const char *want_sub(void) { return store_get("subsLang", "eng"); }
+static const char *want_sub2(void) { return store_get("subsLang2", ""); } /* domar: the second language (Settings > Subtitles), for a film with none in the first; "" none */
 /* Settings > Subtitles > Subtitle preference: Forced only = a film starts with a forced track in that language (only
    the lines in another language and the signs), or none; All subtitles = as always (PR #50) */
 static int want_forced(void) { return !strcmp(store_get("subsMode", "all"), "forced"); }
@@ -602,7 +603,7 @@ static void auto_sub(void) {
   if (P.autoSubDone || strcmp(P.curSub, "off")) return;
   const cJSON *sp = sub_pref(); const char *pk = js_str(sp, "sk", ""), *pn = js_str(sp, "sn", ""), *pu = js_str(sp, "sub", "");
   if (!strcmp(pk, "off")) { P.autoSubDone = 1; return; } /* this show: none, as chosen */
-  const char *w = *pk ? js_str(sp, "sl", "") : want_sub(); if (!*w) return;
+  const char *w = *pk ? js_str(sp, "sl", "") : want_sub(); if (!*w) return; int second = 0;
   again:;
   if (!strcmp(pk, "ext") && (P.nExt || P.nAdx)) { /* this show's file from an addon: the same addon first, the language */
     if (*pu) for (int any = 0; any < 2; any++) { /* domar: the very file picked last time, when it is in the lists (another episode: it is not, and the addon is what counts). From the source it was picked from when that one lists it: the built-in list and an addon can carry the same file, and its tick sat under whichever answered first */
@@ -622,6 +623,11 @@ static void auto_sub(void) {
     for (int i = 0; i < P.nAdx; i++) if (lang_match(P.adx[i].lang, w) && (!fo || P.adx[i].forced) && (pass || variant_ok(P.adx[i].lang, w))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; } }
   if (*pk && !P.extLoading && !P.adxLoading && *want_sub() && !lang_match(w, want_sub())) { /* this show's language not in this episode, every list in: the settings' */
     fprintf(stderr, "[subs] no %s for this show here: the settings' %s\n", w, want_sub()); pk = ""; pn = ""; w = want_sub(); goto again; }
+  /* domar: nothing in the settings' language, in the file or in any list (every list in, the file's tracks known or
+     waited for): the second language, picked the same way (the file's own track first, then the lists) */
+  { const char *w2 = want_sub2();
+    if (!second && *w2 && !P.extLoading && !P.adxLoading && (P.embKnown || P.embWaitOver) && lang_match(w, want_sub()) && !lang_match(w, w2)) {
+      fprintf(stderr, "[subs] no %s here: the second language, %s\n", w, w2); second = 1; pk = ""; pn = ""; w = w2; goto again; } }
 }
 /* a trailer's captions (IMDb's or YouTube's): handed over with the trailer, read when the CC button turns them on */
 static TrailerSub trSubs[TRAILER_MAX_SUBS], trNext[TRAILER_MAX_SUBS]; static int trSubsN, trNextN;
@@ -1582,7 +1588,7 @@ static void tray_data(void) {
       if (onAdx >= 0) subs_lang_canon(P.adx[onAdx].lang, onKey, sizeof onKey);
       for (int i = 0; i < P.nAdx; i++) { const SubEntry *e = &P.adx[i]; char k[24]; subs_lang_canon(e->lang, k, sizeof k); int f = -1; for (int q = 0; q < nk; q++) if (!strcmp(keys[q], k)) f = q;
         if (f < 0 && nk < 64) { f = nk++; snprintf(keys[f], 24, "%s", k); snprintf(names[f], 64, "%s", T(e->name)); cnt[f] = 0; } if (f >= 0) cnt[f]++; }
-      for (int a = 1; a < nk; a++) for (int b = a; b > 0; b--) { int pa = lang_match(keys[b - 1], w), pb = lang_match(keys[b], w); if (pb > pa || (pb == pa && strcasecmp(names[b - 1], names[b]) > 0)) { char t1[24], t2[64]; int tc = cnt[b]; snprintf(t1, 24, "%s", keys[b]); snprintf(t2, 64, "%s", names[b]); snprintf(keys[b], 24, "%s", keys[b - 1]); snprintf(names[b], 64, "%s", names[b - 1]); cnt[b] = cnt[b - 1]; snprintf(keys[b - 1], 24, "%s", t1); snprintf(names[b - 1], 64, "%s", t2); cnt[b - 1] = tc; } else break; }
+      for (int a = 1; a < nk; a++) for (int b = a; b > 0; b--) { const char *w2 = want_sub2(); int pa = lang_match(keys[b - 1], w) ? 2 : lang_match(keys[b - 1], w2), pb = lang_match(keys[b], w) ? 2 : lang_match(keys[b], w2); if (pb > pa || (pb == pa && strcasecmp(names[b - 1], names[b]) > 0)) { char t1[24], t2[64]; int tc = cnt[b]; snprintf(t1, 24, "%s", keys[b]); snprintf(t2, 64, "%s", names[b]); snprintf(keys[b], 24, "%s", keys[b - 1]); snprintf(names[b], 64, "%s", names[b - 1]); cnt[b] = cnt[b - 1]; snprintf(keys[b - 1], 24, "%s", t1); snprintf(names[b - 1], 64, "%s", t2); cnt[b - 1] = tc; } else break; }
       int have = 0; for (int q = 0; q < nk; q++) if (!strcmp(keys[q], P.subLang)) have = 1;
       if (!have) { int pick = -1; /* the language of the subtitle on, else the one you read, else the first */
         if (onKey[0]) for (int q = 0; q < nk; q++) if (!strcmp(keys[q], onKey)) pick = q;
