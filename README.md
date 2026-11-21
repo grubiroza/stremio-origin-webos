@@ -1,3 +1,6 @@
+> **This is a fork** of [stremio-origin/webos](https://github.com/stremio-origin/webos): fixes made on an LG C9 (webOS 4.x) on top of 1.1.1, each one
+> reported upstream. What is changed and why: **[FORK.md](FORK.md)**. For the app itself, its releases and help, go upstream.
+
 ![Stremio Origin](docs/header-rounded.png)
 
 <p align="center">
