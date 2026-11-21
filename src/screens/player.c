@@ -1572,12 +1572,17 @@ static void srcs_begin(const char *vid) {
 }
 /* the tabs: All, then each addon with how many it has (a dot while it is asked) */
 static int src_count(int g) { int n = 0; for (int i = 0; i < P.srcs.g[g].n; i++) if (P.srcs.g[g].items[i].url[0]) n++; return n; }
-static void src_tabs(void) { int tot = 0; P.tray.ntabs = 0;
+/* domar: an addon that answered with nothing has no tab, as the title page's list has no chip for it ("Local Files
+   (without catalog support)  0" stood first for good); the tab being looked at stays even when its addon comes empty.
+   srcTabG: each tab's addon (-1: All), since the tabs no longer run one to one with the addons */
+static int srcTabG[40], srcNT; /* (srcNT: how many tabs it was filled for: tray_data clears P.tray.ntabs before the tabs are made again) */
+static void src_tabs(void) { int tot = 0, cur = P.tray.tab > 0 && P.tray.tab < srcNT ? srcTabG[P.tray.tab] : -1; P.tray.ntabs = 0;
   for (int g = 0; g < P.srcs.ng; g++) tot += src_count(g);
-  { char n[12]; snprintf(n, sizeof n, "%d", tot); snprintf(P.tray.tabs[P.tray.ntabs++], 48, "%s  %s", T("All"), tot ? n : "\xc2\xb7"); }
-  for (int g = 0; g < P.srcs.ng && P.tray.ntabs < 40; g++) { char n[12]; if (P.srcs.g[g].st >= 2) snprintf(n, sizeof n, "%d", src_count(g)); else snprintf(n, sizeof n, "\xc2\xb7");
-    snprintf(P.tray.tabs[P.tray.ntabs++], 48, "%.36s  %s", P.srcs.g[g].name, n); }
-  if (P.tray.tab >= P.tray.ntabs) P.tray.tab = 0; }
+  { char n[12]; snprintf(n, sizeof n, "%d", tot); srcTabG[P.tray.ntabs] = -1; snprintf(P.tray.tabs[P.tray.ntabs++], 48, "%s  %s", T("All"), tot ? n : "\xc2\xb7"); }
+  int tab = 0;
+  for (int g = 0; g < P.srcs.ng && P.tray.ntabs < 40; g++) { char n[12]; if (P.srcs.g[g].st == 3 && g != cur) continue; if (P.srcs.g[g].st >= 2) snprintf(n, sizeof n, "%d", src_count(g)); else snprintf(n, sizeof n, "\xc2\xb7");
+    if (g == cur) tab = P.tray.ntabs; srcTabG[P.tray.ntabs] = g; snprintf(P.tray.tabs[P.tray.ntabs++], 48, "%.36s  %s", P.srcs.g[g].name, n); }
+  P.tray.tab = tab; srcNT = P.tray.ntabs; }
 /* the rows' heights: a stream two lines (three with its note), a pinned one the same, an addon's name a short line */
 #define SN_PX 27      /* a stream's facts: 27 px on 34 */
 #define SN_LH 34.0f
@@ -1606,7 +1611,7 @@ static void src_rows(void) {
     for (int g = 0; g < P.srcs.ng; g++) { int st = P.srcs.g[g].st; if (st == 3) continue; sr_add(5, g, -1);
       if (st <= 1) { sr_add(1, g, 0); sr_add(1, g, 1); } else src_add_group(g); }
     int any = 0; for (int i = 0; i < SR.n; i++) if (SR.r[i].k != 0) any = 1; if (!any) sr_add(0, -1, 0); }
-  else { int g = tab - 1; if (g < P.srcs.ng) { int st = P.srcs.g[g].st;
+  else { int g = tab < srcNT ? srcTabG[tab] : -1; if (g >= 0 && g < P.srcs.ng) { int st = P.srcs.g[g].st;
       if (st <= 1) { sr_add(1, g, 0); sr_add(1, g, 1); sr_add(1, g, 2); } else if (st == 3) sr_add(0, g, 0); else src_add_group(g); } }
   float y = 0;
   for (int i = 0; i < SR.n; i++) { SRow *r = &SR.r[i];
