@@ -1071,6 +1071,8 @@ int sb_resume_stream(const char *id, const char *vid, Stream *out) {
   copy_str(out->filename, sizeof out->filename, js_str(s, "filename", "")); copy_str(out->hash, sizeof out->hash, js_str(s, "hash", "")); out->size = js_num(s, "size", 0);
   return out->url[0] != 0;
 }
+void sb_forget_stream(const char *id, const char *vid) { cJSON *all = store_node("streams"); if (!cJSON_IsObject(all)) return; char k[200]; snprintf(k, sizeof k, "%s_%s", id, vid);
+  if (cJSON_GetObjectItemCaseSensitive(all, k)) { cJSON_DeleteItemFromObjectCaseSensitive(all, k); store_set_node("streams", all); } }
 void sb_remember_stream(const char *id, const char *vid, const Stream *s) {
   if (!s->url[0]) return;
   cJSON *all = store_node("streams"); if (!cJSON_IsObject(all)) { all = cJSON_CreateObject(); store_set_node("streams", all); }

@@ -405,14 +405,19 @@ static void ep_back_check(void) {
    past its end, it ended at once: the episode was marked watched and its place was lost (seen 2026-11-21, AIOStreams:
    "Opened on a different connection"). So: a file less than half as long as the one this place was kept in is not
    this film: nothing is resumed, kept or marked, the next episode does not start by itself, and another source picked
-   in the player starts from the kept place. Decided once, when the length is known. */
+   in the player starts from the kept place. Decided once, when the length is known.
+   The first time it is seen for a title, the same file is asked for again by itself (RF, rf_begin below): the words
+   on the screen come only when that did not bring the film back. */
+static struct { int want; char tried[SB_ID + SB_VID + 2]; unsigned tok; int rank; double until, startAt; Stream was, best; } RF;
 static int wrong_file(void) {
   if (P.wrong) return P.wrong > 0; if (P.isTrailer || !P.id[0] || live_title()) return 0;
   double dn = dur(); if (dn <= 0) return 0;
   cJSON *l = lib_get(P.id); const cJSON *st = js_obj(l, "state");
   double d = st && !strcmp(js_str(st, "video_id", ""), P.vid) ? js_num(st, "duration", 0) / 1000 : 0, to = d > 0 ? js_num(st, "timeOffset", 0) / 1000 : 0;
-  if (!(d > 0 && to > 5 && dn < d * 0.5)) { P.wrong = -1; return 0; }
+  if (!(d > 0 && to > 5 && dn < d * 0.5)) { P.wrong = -1; RF.tried[0] = 0; return 0; }
   P.wrong = 1; fprintf(stderr, "[player] not the film this place was kept in (%.0f s long, that one %.0f s, the place at %.0f s): nothing kept or marked\n", dn, d, to);
+  { char k[SB_ID + SB_VID + 2]; snprintf(k, sizeof k, "%s_%s", P.id, P.vid); /* once for a title: the same file asked for again, by the next frame */
+    if (strcmp(RF.tried, k) && P.st.addon[0] && !P.isP2p && !P.closing) { snprintf(RF.tried, sizeof RF.tried, "%s", k); RF.want = 1; return 1; } }
   toast(T("This link no longer plays the film. Your place is kept: pick a source again"), 9000, NULL); return 1;
 }
 static void save_progress(int push) { double d = dur(); if (!P.id[0] || P.isTrailer || d <= 0 || live_title() || getenv("SB_PLAY_NOSAVE")) return; if (wrong_file()) return; /* (a live broadcast: no place in Continue Watching, nothing to resume) */ /* (SB_PLAY_NOSAVE: development plays leave the library alone) */
@@ -1404,6 +1409,41 @@ static void next_auto(void) {
   set_status(T("Finding the closest source\xe2\x80\xa6")); P.nx.tok = ++nxTok; if (!P.nx.tok) P.nx.tok = ++nxTok; P.nx.until = now_() + 15;
   sb_streams(P.type, nv, nx_part, nx_done, (void *)(uintptr_t)P.nx.tok);
 }
+/* ---- domar: a remembered link that plays something else (wrong_file): the same file, asked for again. The addon the
+   stream came from is asked for this video's streams once more (every addon, when that one is not found by its name)
+   and the very file is looked for in the answer: by its file name, its hash, its size, else the same words from the
+   same addon. Found, it plays from the kept place and is the remembered stream from then on. Not found: the title
+   page's list, the place kept as it was, the dead link no longer remembered ---- */
+static int rf_rank(const Stream *s) { const Stream *w = &RF.was; int same = !strcmp(s->addon, w->addon);
+  if (w->filename[0] && !strcmp(s->filename, w->filename) && (s->size <= 0 || w->size <= 0 || s->size == w->size)) return same ? 6 : 5;
+  if (w->hash[0] && !strcmp(s->hash, w->hash)) return same ? 6 : 5;
+  if (same && w->size > 0 && s->size == w->size) return 4;
+  if (same && w->title[0] && !strcmp(s->title, w->title)) return 3;
+  return 0; }
+static void rf_finish(void) {
+  if (!RF.tok) return; RF.tok = 0;
+  if (RF.rank) { Stream b = RF.best; fprintf(stderr, "[player] the same file again from %s (match %d): %s\n", b.addon, RF.rank, b.filename[0] ? b.filename : "(no file name)"); play_stream(&b, P.vid, RF.startAt); return; }
+  fprintf(stderr, "[player] the same file is not offered any more (%s): the title's list, the place kept\n", RF.was.addon);
+  toast(T("This link no longer plays the film and the same file is not offered. Your place is kept: pick a source"), 9000, NULL);
+  sb_forget_stream(P.id, P.vid); /* (no "Resume last stream" at the top of that list: it would play the notice again) */
+  snprintf(closeVid, sizeof closeVid, "%s", P.vid); close_player(1, 0);
+}
+static void rf_part(StreamGroup *g, int gi, void *ud) {
+  (void)gi; if (P.open && !P.closing && RF.tok && (unsigned)(uintptr_t)ud == RF.tok) {
+    for (int i = 0; i < g->n; i++) { const Stream *s = &g->items[i]; if (!s->url[0] || !can_play(s)) continue; int v = rf_rank(s); if (v > RF.rank) { RF.rank = v; RF.best = *s; } }
+    free(g->items); if (RF.rank >= 6) rf_finish(); return; } /* the very file from its own addon: no need to wait for the others */
+  free(g->items);
+}
+static void rf_done(int total, void *ud) { (void)total; if (P.open && !P.closing && RF.tok && (unsigned)(uintptr_t)ud == RF.tok) rf_finish(); }
+static void rf_begin(void) {
+  RF.want = 0; if (!P.open || P.closing || P.wrong <= 0) return;
+  RF.was = P.st; RF.startAt = P.startAt; RF.rank = 0; char vid[SB_VID]; snprintf(vid, sizeof vid, "%s", P.vid);
+  char names[16][96]; int n = sb_stream_addons(P.type, vid, names, 16), which = -1; for (int i = 0; i < n; i++) if (!strcmp(names[i], RF.was.addon)) { which = i; break; }
+  fprintf(stderr, "[player] asking %s for the same file again (%s)\n", which >= 0 ? RF.was.addon : "every addon", RF.was.filename[0] ? RF.was.filename : "no file name kept");
+  prepare(vid, RF.startAt, 1); set_status(T("This link has expired. Asking for the same file again\xe2\x80\xa6"));
+  RF.tok = ++nxTok; if (!RF.tok) RF.tok = ++nxTok; RF.until = now_() + 50;
+  if (which >= 0) sb_streams_one(P.type, vid, which, rf_part, rf_done, (void *)(uintptr_t)RF.tok); else sb_streams(P.type, vid, rf_part, rf_done, (void *)(uintptr_t)RF.tok);
+}
 static void go_next(void) {
   if (P.next.has && !P.nextTried) { P.nextTried = 1; next_auto(); }
   else if (P.next.has) { mark_watched(); snprintf(closeVid, sizeof closeVid, "%s", P.next.vid); close_player(1, 0); }
@@ -2284,10 +2324,10 @@ int player_cast_state(double *pos, double *du, char *title, int cap) {
   *pos = video_time(); *du = dur();
   return vs == VID_ENDED ? 4 : vs == VID_ERROR ? 5 : paused() ? 3 : vs == VID_LOADING || vs == VID_BUFFERING ? 1 : 2;
 }
-static void finish_close(void) { if (hub_on() && hub_player_mode()) hub_close(); /* (one from Home stays: it is the page) */ { extern void detail_refresh_watched(void); detail_refresh_watched(); } /* the title page under it: its ticks as they are now */ sync_stop(0); gfx_target_free(&handSnap); mo_set(&handA, 0); if (!keepVideo) video_unload(); keepVideo = 0; /* (back into its preview: it plays on there) */ asssubs_close(); if (mkv) { prevspike_stop(); sp_close(); mkv_close(mkv); mkv = NULL; } p2p_player_closed(); p2pTok++; metaTok++; P.open = 0; P.closing = 0; if (P.meta) cJSON_Delete(P.meta); P.meta = NULL; subs_free(P.cues, P.ncues); free(P.ext); free(P.adx); srcs_free(); cols_clear(); memset(&P, 0, sizeof P); sub_reset(); free(extAss); extAss = NULL; app_refresh_boards(); }
+static void finish_close(void) { if (hub_on() && hub_player_mode()) hub_close(); /* (one from Home stays: it is the page) */ { extern void detail_refresh_watched(void); detail_refresh_watched(); } /* the title page under it: its ticks as they are now */ sync_stop(0); gfx_target_free(&handSnap); mo_set(&handA, 0); if (!keepVideo) video_unload(); keepVideo = 0; /* (back into its preview: it plays on there) */ asssubs_close(); if (mkv) { prevspike_stop(); sp_close(); mkv_close(mkv); mkv = NULL; } p2p_player_closed(); p2pTok++; metaTok++; RF.tried[0] = 0; RF.tok = 0; RF.want = 0; P.open = 0; P.closing = 0; if (P.meta) cJSON_Delete(P.meta); P.meta = NULL; subs_free(P.cues, P.ncues); free(P.ext); free(P.adx); srcs_free(); cols_clear(); memset(&P, 0, sizeof P); sub_reset(); free(extAss); extAss = NULL; app_refresh_boards(); }
 static int closeNext, closeSim, closeArt; static double closeAt, closeT0; /* closeArt: closed on the loading screen (its line and words fade as the logo flies back) */
 static void close_player(int goNext, int goSim) {
-  if (!P.open || P.closing) return; if (bestTok) { best_choose_cancel(bestTok); bestTok = 0; } P.closing = 1; ps_hold(0); sp_verify_reset(); np_stop(); NP.vid[0] = 0; /* (the next episode's pictures made so far: kept) */ /* (a lighter copy not taken yet: it reads on freely, nothing plays) */ closeArt = !P.live && P.artA.v > 0.999f; closeT0 = now_(); sx_begin_quick(0); /* the player's logo moves back to the page */ closeNext = goNext; closeSim = goSim; P.ssOn = 0; P.nx.tok = 0; P.sk.tok = 0;
+  if (!P.open || P.closing) return; if (bestTok) { best_choose_cancel(bestTok); bestTok = 0; } P.closing = 1; ps_hold(0); sp_verify_reset(); np_stop(); NP.vid[0] = 0; /* (the next episode's pictures made so far: kept) */ /* (a lighter copy not taken yet: it reads on freely, nothing plays) */ closeArt = !P.live && P.artA.v > 0.999f; closeT0 = now_(); sx_begin_quick(0); /* the player's logo moves back to the page */ closeNext = goNext; closeSim = goSim; P.ssOn = 0; P.nx.tok = 0; P.sk.tok = 0; RF.tok = 0; RF.want = 0;
   scrobble_player_end(video_time(), dur(), 0); save_progress(1); video_pause(); /* (Test playback: nothing told, nothing kept) */
   /* the title's own picture fades back over the paused frame, the video goes, then the cover fades onto the app */
   closeAt = now_() + (closeArt ? 0.01 : 0.26); /* the cover fades back over the paused frame (see css()); from the loading screen the art fades at once, under the logo on its way back */
@@ -2525,6 +2565,7 @@ void player_tick(float dt) {
   if (vs == VID_ERROR && !P.failed && P.started && live_reload("stream error")) vs = video_state();
   if (vs == VID_ERROR && !P.failed && P.started) { if (P.alt[0] && !P.altTried) { P.altTried = 1; fprintf(stderr, "[player] error, the fallback URL\n"); video_load(P.alt); } else { if (!P.errAt) P.errAt = now_(); if (!P.sizeTok || P.sizeAns || now_() - P.errAt > 4) fail(fail_reason()); } } /* the first URL failed: the same file the other way; the reason waits for the server's answer (4 s at most) */
   if (P.nx.tok && !P.nx.done && now_() >= P.nx.until) nx_finish();
+  if (RF.want) rf_begin(); else if (RF.tok && now_() >= RF.until) rf_finish(); /* domar: the same file asked for again */
   if (P.metaRetryAt && now_() >= P.metaRetryAt) { P.metaRetryAt = 0; if (!P.next.has || !P.videos) ask_meta(); }
   if (P.extRetryAt && now_() >= P.extRetryAt) { P.extRetryAt = 0; load_ext_subs(P.extTry + 1); }
   if (P.adxRetryAt && now_() >= P.adxRetryAt) { P.adxRetryAt = 0; load_addon_subs(P.adxTry + 1); }
@@ -2564,7 +2605,7 @@ void player_tick(float dt) {
     if (vs == VID_PLAYING && at_credits() && !P.marked) { mark_watched(); save_progress(1); } /* the credits: watched, everywhere, at once */
     if (vs == VID_PLAYING && now_() - P.lastSave >= 10) save_progress(0);
     if (vs == VID_ENDED && !P.ended && live_reload("the stream ended")) vs = video_state();
-    if (vs == VID_ENDED && !P.ended) { P.ended = 1; scrobble_player_end(video_time(), dur(), 1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has && !wrong_file()) P.endGoAt = now_() + 0.6; else close_player(0, 0); }
+    if (vs == VID_ENDED && !P.ended) { P.ended = 1; scrobble_player_end(video_time(), dur(), 1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has && !wrong_file()) P.endGoAt = now_() + 0.6; else if (!RF.want) close_player(0, 0); }
     if (P.endGoAt && now_() >= P.endGoAt) { P.endGoAt = 0; go_next(); if (!P.open || P.closing) return; }
     check_prompt();
     if (P.prompt.autoN && (P.prompt.k == 1 || P.prompt.k == 2) && now_() - P.prompt.t0 >= P.prompt.adur && !paused()) prompt_go(0);
