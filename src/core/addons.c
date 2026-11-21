@@ -13,6 +13,11 @@ void addon_urlenc(const char *s, char *out, size_t cap) {
   out[o] = 0;
 }
 void addon_base(const cJSON *ad, char *out, size_t cap) {
+  { const char *tu = js_str(ad, "transportUrl", ""); size_t full = strlen(tu); /* domar: an address longer than its room is said (once per addon and room), never silent. The catalogs' room
+       is 511 (CatalogDef): said only for an addon that has catalogs */
+    if (full >= cap && (cap >= SB_BASE_MAX || cJSON_GetArraySize(js_arr(js_obj(ad, "manifest"), "catalogs")) > 0)) { static unsigned said[32]; static int nsaid; unsigned h = 2166136261u ^ (unsigned)cap; int seen = 0;
+      for (const char *c = tu; *c; c++) h = (h ^ (unsigned char)*c) * 16777619u; for (int i = 0; i < nsaid; i++) if (said[i] == h) seen = 1;
+      if (!seen) { if (nsaid < 32) said[nsaid++] = h; fprintf(stderr, "[addons] %s: its address has %d characters, only %d are used for %s\n", addon_name(ad), (int)full, (int)cap - 1, cap >= SB_BASE_MAX ? "its requests" : "its catalogs"); } } }
   snprintf(out, cap, "%s", js_str(ad, "transportUrl", "")); char *m = strstr(out, "/manifest.json"); if (m) *m = 0;
   size_t n = strlen(out); while (n && out[n - 1] == '/') out[--n] = 0;
 }

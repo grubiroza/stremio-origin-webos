@@ -12,6 +12,9 @@ int  addon_serves(const cJSON *ad, const char *resource, const char *type, const
 /* subtitles, leniently: declared at all, movie and series are always asked (the id prefixes still apply); and their count */
 int  addon_serves_subs(const cJSON *ad, const char *type, const char *id);
 int  addon_count_subs(const char *type, const char *id);
+/* domar: room for an addon's address. Some carry their whole setup in it (Comet: 730 and 930 characters on this
+   account); cut at 511, the setup arrived broken and the addon answered "obsolete configuration" */
+#define SB_BASE_MAX 2048
 void addon_base(const cJSON *ad, char *out, size_t cap);       /* the transport URL without /manifest.json */
 const char *addon_name(const cJSON *ad);                      /* its manifest's name ("Addon") */
 /* "{base}/{resource}/{type}/{id}[/{extra}].json", each part encoded; extra already "a=b&c=d" (NULL or "": none) */

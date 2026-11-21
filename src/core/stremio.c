@@ -470,7 +470,7 @@ static void meta_put(const char *k, cJSON *m) { metaVer++; int slot = 0; unsigne
 /* a title page's disk copy: under the addons' setup too */
 static void meta_ck(char *out, size_t cap, const char *key) { snprintf(out, cap, "meta%08x:%s", addon_gen(), key); }
 #define META_BASES 8
-typedef struct { char type[16], id[SB_ID], key[SB_ID + 32]; void (*cb)(cJSON *, void *); void *ud; int fresh; char bases[META_BASES][512]; int nb, bi; } MetaReq;
+typedef struct { char type[16], id[SB_ID], key[SB_ID + 32]; void (*cb)(cJSON *, void *); void *ud; int fresh; char bases[META_BASES][SB_BASE_MAX]; int nb, bi; } MetaReq;
 static void meta_try(MetaReq *r);
 static void on_meta(int st, const unsigned char *b, size_t n, void *ud) {
   MetaReq *r = ud; cJSON *j = st == 200 ? net_json(b) : NULL; cJSON *m = j ? cJSON_DetachItemFromObjectCaseSensitive(j, "meta") : NULL; net_json_free(j);
@@ -482,7 +482,7 @@ static void on_meta(int st, const unsigned char *b, size_t n, void *ud) {
 }
 static void meta_try(MetaReq *r) {
   if (r->bi >= r->nb) { if (!r->fresh) r->cb(NULL, r->ud); free(r); return; }
-  char url[800]; addon_url(url, sizeof url, r->bases[r->bi++], "meta", r->type, r->id, NULL);
+  char url[SB_BASE_MAX + 768]; addon_url(url, sizeof url, r->bases[r->bi++], "meta", r->type, r->id, NULL);
   net_get(url, on_meta, r);
 }
 static void meta_go(MetaReq *r) {
@@ -505,8 +505,8 @@ void sb_meta(const char *type, const char *id, void (*cb)(cJSON *, void *), void
   cJSON *m = sb_meta_cached(type, id); if (m) { cb(m, ud); return; }
   MetaReq *r = calloc(1, sizeof *r); copy_str(r->type, sizeof r->type, type); copy_str(r->id, sizeof r->id, id); snprintf(r->key, sizeof r->key, "%s_%s", type, id); r->cb = cb; r->ud = ud;
   cJSON *a = sb_addons(); const cJSON *ad; int cine = 0;
-  if (a) cJSON_ArrayForEach(ad, a) { if (r->nb >= META_BASES || !addon_serves(ad, "meta", type, id)) continue; addon_base(ad, r->bases[r->nb], 512); if (!strcmp(r->bases[r->nb], CINEMETA)) cine = 1; r->nb++; }
-  if (sb_is_imdb(id) && !cine && r->nb < META_BASES && (!strcmp(type, "movie") || !strcmp(type, "series"))) copy_str(r->bases[r->nb++], 512, CINEMETA);
+  if (a) cJSON_ArrayForEach(ad, a) { if (r->nb >= META_BASES || !addon_serves(ad, "meta", type, id)) continue; addon_base(ad, r->bases[r->nb], SB_BASE_MAX); if (!strcmp(r->bases[r->nb], CINEMETA)) cine = 1; r->nb++; }
+  if (sb_is_imdb(id) && !cine && r->nb < META_BASES && (!strcmp(type, "movie") || !strcmp(type, "series"))) copy_str(r->bases[r->nb++], SB_BASE_MAX, CINEMETA);
   /* a disk copy under 12 h old shows first (read and parsed on the file thread: a series' copy is a tree of hundreds of
      episodes), then the addons are asked anyway so the next visit is current */
   char ck[SB_ID + 48], cp[1200]; meta_ck(ck, sizeof ck, r->key);
@@ -1038,7 +1038,7 @@ static unsigned streams_req(const char *type, const char *vid, int only, StreamP
   int idx = 0; const cJSON *ad;
   if (a) cJSON_ArrayForEach(ad, a) { if (!addon_serves(ad, "stream", type, vid)) continue; if (only >= 0 && idx != only) { idx++; continue; }
     StreamPart *p = calloc(1, sizeof *p); p->req = r; p->idx = idx++; copy_str(p->name, sizeof p->name, addon_name(ad));
-    char base[512], url[900]; addon_base(ad, base, sizeof base); addon_url(url, sizeof url, base, "stream", type, vid, NULL);
+    char base[SB_BASE_MAX], url[SB_BASE_MAX + 768]; addon_base(ad, base, sizeof base); addon_url(url, sizeof url, base, "stream", type, vid, NULL); /* domar: 512 and 900 cut Comet's address in the middle of its setup */
     r->pending++; net_get_timeout(url, 45000, on_streams, p); } /* slow debrid addons can take 20-30 s: the phone and PC apps wait as long */
   r->count = r->pending; if (!r->pending) { done(0, ud); free(r); return 0; }
   if (ans) ans(r->pending, r->count, ud); /* (how many were asked, at once: a wait can say how many are left from its start) */
