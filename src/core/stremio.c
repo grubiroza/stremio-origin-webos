@@ -988,6 +988,7 @@ static int stream_parse(Stream *o, const cJSON *s, const char *addon) {
   copy_str(o->addon, sizeof o->addon, addon); copy_str(o->name, sizeof o->name, js_str(s, "name", "")); copy_str(o->title, sizeof o->title, js_str(s, "description", js_str(s, "title", "")));
   const cJSON *bh = js_obj(s, "behaviorHints"); copy_str(o->filename, sizeof o->filename, js_str(bh, "filename", "")); copy_str(o->binge, sizeof o->binge, js_str(bh, "bingeGroup", ""));
   o->notWeb = js_bool(bh, "notWebReady", 0); o->size = js_numstr(bh, "videoSize", 0); copy_str(o->hash, sizeof o->hash, js_str(bh, "videoHash", ""));
+  { const cJSON *cv = bh ? cJSON_GetObjectItemCaseSensitive(bh, "cached") : NULL; o->cached = cJSON_IsBool(cv) ? (cJSON_IsTrue(cv) ? 1 : -1) : 0; } /* domar: the addon's own word on its debrid file (best_cached) */
   const cJSON *ph = js_obj(bh, "proxyHeaders"); if (o->url[0] && !o->p2p && strncmp(o->url, "ytid:", 5)) { hdr_lines(js_obj(ph, "request"), o->hdrs, sizeof o->hdrs); hdr_lines(js_obj(ph, "response"), o->rhdrs, sizeof o->rhdrs); }
   const cJSON *subs = js_arr(s, "subtitles"); o->nsubs = subs ? cJSON_GetArraySize(subs) : 0; if (o->nsubs) stream_subs_keep(o->url[0] ? o->url : o->ext, subs, addon);
   return 1;

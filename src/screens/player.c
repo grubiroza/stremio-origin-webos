@@ -3136,7 +3136,9 @@ static void draw_srcs(float ix, float top, float W) {
         char ln[300]; snprintf(ln, sizeof ln, "%s%s%s", bf->facts[0] ? bf->facts : first, bf->meta[0] ? "  \xc2\xb7  " : "", bf->meta); text_draw(ln, 22, l2, SD_PX, 500, WHITE_A(210), 0, RW - 44, ALIGN_LEFT); }
       else {
         float mw = bf->meta[0] ? text_width(bf->meta, SD_PX, 600, 0) : 0; if (mw) text_draw(bf->meta, right, l1 + (LN - LD) / 2, SD_PX, 600, WHITE_A(185), 0, 0, ALIGN_RIGHT);
-        text_draw(bf->facts[0] ? bf->facts : first, 22, l1, SN_PX, 700, bf->facts[0] ? ACC3 : WHITE_A(240), 0.2f, right - 22 - (mw ? mw + 24 : 0), ALIGN_LEFT);
+        float cw = mw && bf->cached ? 21 + 10 : 0; /* domar: a debrid file in its service's cloud (a bolt) or not there yet (an hourglass), left of its size */
+        if (cw) icon_draw(bf->cached > 0 ? "cached" : "uncached", right - mw - 10 - 21, y + 16 + (SN_LH - 21) / 2, 21, bf->cached > 0 ? WHITE_A(185) : CORAL);
+        text_draw(bf->facts[0] ? bf->facts : first, 22, l1, SN_PX, 700, bf->facts[0] ? ACC3 : WHITE_A(240), 0.2f, right - 22 - (mw ? mw + 24 : 0) - cw, ALIGN_LEFT);
         char rl[300]; snprintf(rl, sizeof rl, "%s", bf->rel[0] ? bf->rel : bf->facts[0] ? first : st->addon); text_draw(rl, 22, l2, SD_PX, 400, WHITE_A(155), 0, RW - 44, ALIGN_LEFT); }
       if (bf->warn[0]) { float wy = y + 16 + SN_LH + 4 + SD_LH + 4; icon_draw("minus", 22, wy + (SD_LH - 22) / 2, 22, CORAL); text_draw(bf->warn, 22 + 32, wy + (SD_LH - text_line_height(22)) / 2, 22, 700, CORAL, 0, RW - 44 - 32, ALIGN_LEFT); }
       if (bf->out && !f) gfx_opacity_pop(); }

@@ -50,8 +50,11 @@ void best_audio_of(const char *label, char *out, size_t cap);
    "12.1 GB  ·  484 seeds"), the release's name (the file's, else the title's line most like one; may be empty), and
    the one thing that matters most on this TV (warn, may be empty; out: it won't play here at all). c NULL = the kept
    caps; mbps < 0 = the measured speed; durMin <= 0 = a film's */
-typedef struct { char facts[128], meta[96], rel[256], warn[160]; int out; } BestFacts;
+typedef struct { char facts[128], meta[96], rel[256], warn[160]; int out; int cached; } BestFacts; /* domar: cached: best_cached() */
 void best_facts(const Stream *s, const TvCaps *c, double mbps, double durMin, BestFacts *f);
+/* domar: where a debrid file is, as its addon tells it: 1 in the service's cloud (it starts at once), -1 not there yet
+   (the service fetches it first: slow to start), 0 not said, and for a torrent. The lists mark the first two */
+int best_cached(const Stream *s);
 
 /* ---- choosing for Play ---- */
 /* Fetches the streams of type/vid and picks one: at once when every addon answered, else after up to 12 s

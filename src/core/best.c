@@ -212,13 +212,25 @@ static int lang_score(const char *raw, const char *l) { int ia = lang_index(pref
   if (ia >= 0 && m) { if (m & (1ull << ia)) sc += 60; else if (ie >= 0 && (m & (1ull << ie))) sc += 0; else if (multi) sc -= 20; else sc -= 160; } /* the user's audio named: first; else English (as one with none named, the original); only others named: last */
   if (is >= 0 && is != ia) { const char *sw[] = { "vost", "vostfr", "subbed", "subs", "sub", NULL }; int subWord = 0; for (int k = 0; sw[k]; k++) if (has_word(l, sw[k])) subWord = 1; if (subWord && (m & (1ull << is))) sc += 12; }
   return sc; }
+/* domar: the addon's own flag first (behaviorHints.cached), then the words and marks addons write beside a debrid
+   file: "[RD+]", a lightning bolt or the word "cached" for one in the cloud; "[RD download]", an hourglass, "[RD" with
+   a down arrow, "uncached", "not cached", "needs to download" for one that is not. The not-cached words were read in
+   two places here already; the marks are the ones betterstremio/origin reads (best_stream_cache_label, 22e3e1a) */
+int best_cached(const Stream *s) {
+  if (s->p2p || !s->url[0]) return 0; if (s->cached) return s->cached;
+  char nt[1100], raw[1100]; snprintf(raw, sizeof raw, "%s %s", s->name, s->title); lower(raw, nt, sizeof nt);
+  if (strstr(nt, "download]") || strstr(nt, "uncached") || strstr(nt, "not cached") || strstr(nt, "needs to download") || strstr(nt, "\xe2\x8f\xb3") || strstr(nt, "\xe2\x8c\x9b")) return -1;
+  int yes = has_word(nt, "cached") || strstr(nt, "\xe2\x9a\xa1") != NULL;
+  for (const char *p = nt; (p = strchr(p, '[')); p++) { int n = 0; while (p[1 + n] >= 'a' && p[1 + n] <= 'z') n++; if (n < 2 || n > 3) continue; const char *t = p + 1 + n; /* "[rd+]", "[tb" + a down arrow + "]": a service's two or three letters */
+    if (!strncmp(t, "\xe2\xac\x87]", 4) || !strncmp(t, "\xe2\xac\x87\xef\xb8\x8f]", 7)) return -1; if (t[0] == '+' && t[1] == ']') yes = 1; }
+  return yes;
+}
 static int rate(const Stream *s, const TvCaps *c, double mbps, double dur, BestRate *o, int *resOut) {
   char t[2048], l[2048]; best_stream_info(s, t, sizeof t); lower(t, l, sizeof l); blank(l, "._-[]()");
   int p2p = s->p2p;
   static const char *CAM[] = { "cam", "camrip", "hdcam", "ts", "hdts", "telesync", "tc", "telecine", "scr", "screener", "dvdscr" };
   for (size_t i = 0; i < sizeof CAM / sizeof CAM[0]; i++) if (has_word(l, CAM[i])) return 0;
-  if (!p2p) { char nt[1100], raw[1100]; snprintf(raw, sizeof raw, "%s %s", s->name, s->title); lower(raw, nt, sizeof nt); /* debrid, not in the cloud yet */
-    if (strstr(nt, "download]") || strstr(nt, "uncached") || strstr(nt, "needs to download") || strstr(nt, "\xe2\x8f\xb3")) return 0; }
+  if (best_cached(s) < 0) return 0; /* debrid, not in the cloud yet */
   int sd = p2p ? seeds_of(t) : -1; if (p2p && sd >= 0 && sd < 8) return 0; /* a torrent needs a healthy swarm: a thin one stalls */
   const char *rl = best_res_of(t); int r = res_n(rl), rr = r ? r : 720; char hd[32], au[32], a0[32]; best_hdr_of(t, hd, sizeof hd); best_audio_of(t, au, sizeof au);
   snprintf(a0, sizeof a0, "%s", au); { char *sp = strchr(a0, ' '); if (sp) *sp = 0; }
@@ -291,7 +303,7 @@ void best_facts(const Stream *s, const TvCaps *c, double mbps, double durMin, Be
   int ten = has_word(l, "10bit") || strstr(l, "10 bit") || has_word(l, "hi10") || has_word(l, "hi10p"), hevc = has_word(l, "x265") || has_word(l, "hevc") || has_word(l, "h265") || strstr(l, "h 265");
   int avc = has_word(l, "x264") || has_word(l, "h264") || strstr(l, "h 264") || has_word(l, "avc"), hi10 = (has_word(l, "hi10") || has_word(l, "hi10p") || (ten && avc)) && !hevc;
   int maxr = c->maxRes ? c->maxRes : 1080;
-  int unc = 0; if (!p2p) { char nt[1100], raw[1100]; snprintf(raw, sizeof raw, "%s %s", s->name, s->title); lower(raw, nt, sizeof nt); unc = strstr(nt, "download]") || strstr(nt, "uncached") || strstr(nt, "needs to download") || strstr(nt, "\xe2\x8f\xb3"); }
+  f->cached = best_cached(s); int unc = f->cached < 0;
   int dm = best_dts_mode(), dts = dm != 2 && strstr(au, "DTS") != NULL, thd = strstr(au, "TrueHD") != NULL, cdts = dm == 1 ? 1 : c->dts, mute = ((dts && !cdts) || (thd && !c->truehd)) && !other_audio(l);
   double need = mb ? mb * 8 / (durMin * 60) * 1.3 : 0, line = mbps > 0 ? mbps : 0, cap = p2p ? (line > 0 ? fmin(line, sd > 0 ? 2 + sd * 0.8 : 4) : (sd > 0 ? 2 + sd * 0.8 : 0)) : line;
   char rb[16]; snprintf(rb, sizeof rb, "%dp", maxr >= 2160 ? 2160 : maxr);

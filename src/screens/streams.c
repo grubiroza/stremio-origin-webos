@@ -148,6 +148,7 @@ static void play(int i) { const Stream *s = S.items[i]; fpill_press(&S.pill);
    all (the details panel the best fit's row had). A stream nothing is read from (a channel, a web page) stays as it was */
 #define CR_PX 23
 #define CR_LH 31.0f
+#define CR_IC 22.0f /* domar: the mark left of a debrid file's size: a bolt (in the service's cloud) or an hourglass (not yet), best_cached() */
 static const BestFacts *facts_of(int i) { int g = i < S.n ? S.itemGroup[i] : -1; if (g < 0 || g >= S.ng || !S.groups[g].f) return NULL; long k = (long)(S.items[i] - S.groups[g].items); return k >= 0 && k < S.groups[g].n ? &S.groups[g].f[k] : NULL; }
 static int compact(int i) { if (i >= S.n || S.kind[i] != R_PLAIN || !S.items[i]->url[0] || live_type(S.type)) return 0; const BestFacts *f = facts_of(i); return f && (f->facts[0] || f->rel[0]); }
 static const char *INFO_LBL[3] = { "Name", "Description", "File" };
@@ -390,7 +391,9 @@ static void draw(void) {
     if (cp) { const BestFacts *bf = facts_of(i); float l1 = iy + 16 + ny, l2 = l1 + NM_LH + 4, ex = rtl ? x0 + 24 + nx : x0 + LW - 24 + nx; int ar = rtl ? ALIGN_LEFT : ALIGN_RIGHT;
       float mw = bf->meta[0] ? text_width(bf->meta, CR_PX, 600, 0) : 0;
       if (mw && ha < 1) text_draw(bf->meta, ex, l1 + (NM_LH - text_line_height(CR_PX)) / 2, CR_PX, 600, col_alpha(f ? ACC_FG : WHITE_A(185), f ? 0.85f * (1 - ha) : 1), 0, 0, ar); /* (its size and kind give way to the hint) */
-      text_draw(bf->facts[0] ? bf->facts : nm, tx, l1 + (NM_LH - text_line_height(NM_PX)) / 2, NM_PX, 600, nc, 0.2f, LW - 48 - (mw ? mw + 24 : 0), al);
+      float cw = mw && bf->cached ? CR_IC + 10 : 0;
+      if (cw && ha < 1) icon_draw(bf->cached > 0 ? "cached" : "uncached", rtl ? ex + mw + 10 : ex - mw - 10 - CR_IC, l1 + (NM_LH - CR_IC) / 2, CR_IC, col_alpha(f ? ACC_FG : bf->cached > 0 ? WHITE_A(185) : RGB(0xff, 0x9a, 0x7a), f ? 0.85f * (1 - ha) : 1));
+      text_draw(bf->facts[0] ? bf->facts : nm, tx, l1 + (NM_LH - text_line_height(NM_PX)) / 2, NM_PX, 600, nc, 0.2f, LW - 48 - (mw ? mw + 24 : 0) - cw, al);
       text_draw(bf->rel[0] ? bf->rel : bf->facts[0] ? nm : S.items[i]->addon, tx, l2 + (CR_LH - text_line_height(CR_PX)) / 2, CR_PX, 400, f ? ACC_FG : WHITE_A(170), 0, LW - 48, al);
       if (bf->warn[0]) { float wy = l2 + CR_LH + 4; uint32_t wc = f ? ACC_FG : RGB(0xff, 0x9a, 0x7a); icon_draw("minus", rtl ? tx - 22 : tx, wy + (CR_LH - 22) / 2, 22, wc); text_draw(bf->warn, rtl ? tx - 32 : tx + 32, wy + (CR_LH - text_line_height(22)) / 2, 22, 700, wc, 0, LW - 48 - 32, al); } }
     else {

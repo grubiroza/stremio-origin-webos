@@ -116,7 +116,7 @@ unsigned lib_version(void);             /* bumps on every change: boards rebuild
    lines) sent with every request for it; binge: behaviorHints.bingeGroup; size / hash: videoSize / videoHash */
 #define SB_URL_MAX 4096 /* some addons' debrid links run past 2 KB (their whole setup sealed in the address) */
 typedef struct { char addon[96], name[256], title[512], url[SB_URL_MAX], filename[256]; int p2p;
-  char ext[512], hdrs[512], rhdrs[256], binge[96], hash[24]; double size; int notWeb, nsubs; } Stream;
+  char ext[512], hdrs[512], rhdrs[256], binge[96], hash[24]; double size; int notWeb, nsubs; int cached; } Stream; /* domar: cached: behaviorHints.cached, 1 true, -1 false, 0 not given */
 typedef struct { char name[96]; Stream *items; int n; } StreamGroup;
 typedef void (*StreamPartCb)(StreamGroup *g, int groupIdx, void *ud);
 typedef void (*StreamDoneCb)(int total, void *ud);

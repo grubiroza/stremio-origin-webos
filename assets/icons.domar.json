@@ -1,1 +1,3 @@
-{"dly": "<svg viewBox=\"0 0 24 24\" stroke-width=\"2\"><path d=\"M13 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4 M7 15h3 M13 15h4 M18 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9 M18 4.5v2h1.5\"/></svg>"}
+{"dly": "<svg viewBox=\"0 0 24 24\" stroke-width=\"2\"><path d=\"M13 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4 M7 15h3 M13 15h4 M18 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9 M18 4.5v2h1.5\"/></svg>",
+ "cached": "<svg viewBox=\"0 0 24 24\"><path d=\"M13.5 1.5L4.5 13.5H10.5L9.5 22.5L19.5 10H13.5L14.5 1.5Z\"/></svg>",
+ "uncached": "<svg viewBox=\"0 0 24 24\"><path d=\"M6 2H18V4H17V7.5L13.2 12L17 16.5V20H18V22H6V20H7V16.5L10.8 12L7 7.5V4H6Z\"/></svg>"}
