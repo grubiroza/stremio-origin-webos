@@ -456,8 +456,8 @@ static void caps_landed(const TvCaps *c, int sure, int dtsCfg) {
   if (sure) { /* kept only when the TV answered: a guess serves this run only */
   cJSON *n = cJSON_CreateObject(); cJSON_AddNumberToObject(n, "maxRes", c->maxRes); cJSON_AddBoolToObject(n, "hdr", c->hdr); cJSON_AddBoolToObject(n, "dv", c->dv);
   cJSON_AddBoolToObject(n, "av1", c->av1); cJSON_AddBoolToObject(n, "truehd", c->truehd); if (dtsCfg >= 0) cJSON_AddBoolToObject(n, "dtsCfg", dtsCfg);
-  static const char *const KEEP[] = { "dtsLearned", "hlsHevcOk", "dv81Hls" }; /* what playback taught stays */
-  for (int i = 0; i < 3; i++) { int v = best_learned(KEEP[i]); if (v >= 0) cJSON_AddBoolToObject(n, KEEP[i], v); }
+  static const char *const KEEP[] = { "dtsLearned", "hlsHevcOk", "dv81Hls", "dv5Hls" }; /* what playback taught stays */
+  for (int i = 0; i < 4; i++) { int v = best_learned(KEEP[i]); if (v >= 0) cJSON_AddBoolToObject(n, KEEP[i], v); }
   store_set_node("tvCaps2", n); }
   int nw = nCapsWaits; CapsWait w[8]; memcpy(w, capsWaits, sizeof w); nCapsWaits = 0;
   for (int i = 0; i < nw; i++) w[i].cb(&caps, w[i].ud);

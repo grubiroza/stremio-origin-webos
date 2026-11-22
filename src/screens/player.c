@@ -914,12 +914,17 @@ static int dts_convert(int tvIdx, const char *why) {
    local HLS, with the audio track copied (converted when this TV can't decode it). Only for an http file whose head
    says profile 7, on a TV with Dolby Vision, with the setting on, and unless this TV has shown that HEVC from local
    HLS fails or that the converted picture still shows as HDR10. Anything that fails plays the file as before.
-   A profile 8 or 5 picture in Matroska (web copies) goes the same way with its RPU as it is: the TV showed it as HDR10 ---- */
+   A profile 8 or 5 picture in Matroska (web copies) goes the same way with its RPU as it is: the TV showed it as HDR10.
+   Profile 5 has a lesson of its own ("dv5Hls"): it has no HDR10 picture to fall back on (from Matroska the TV shows
+   it as a plain picture with wrong colours, washed out and green), so what the TV did with a profile 7 or 8 picture
+   says nothing about it ---- */
+static const char *dv_key(int prof) { return prof == 5 ? "dv5Hls" : "dv81Hls"; }
 static int dv7_wanted(void) {
   if (P.isTrailer || P.isHls || strncmp(P.url, "http", 4) || !hls_conv_available()) return 0;
-  if (!strcmp(store_get("dv7Convert", "true"), "false") || best_learned("hlsHevcOk") == 0 || best_learned("dv81Hls") == 0) return 0;
+  if (!strcmp(store_get("dv7Convert", "true"), "false") || best_learned("hlsHevcOk") == 0) return 0;
   const TvCaps *c = best_caps(); if (!c || !c->dv) return 0;
-  int el = 0, p = mkv_dovi(mkv, &el); return p == 7 || ((p == 8 || p == 5) && !el) ? p : 0; /* 8 and 5 (web copies) too: from a Matroska file the TV showed them as HDR10 */
+  int el = 0, p = mkv_dovi(mkv, &el); p = p == 7 || ((p == 8 || p == 5) && !el) ? p : 0; /* 8 and 5 (web copies) too: from a Matroska file the TV showed them as HDR10 */
+  return p > 0 && best_learned(dv_key(p)) == 0 ? 0 : p;
 }
 static int aud_copyable(const char *codec) { /* the tracks the stream can carry as they are */
   static const char *const OK[] = { "A_AC3", "A_EAC3", "A_AAC", "A_DTS", "A_TRUEHD", "A_MPEG/L3", "A_MPEG/L2" };
@@ -957,7 +962,7 @@ static int dv7_convert(const char *why) {
    the first load waits for the file's head (a moment), so its picture starts converted instead of switching after a second */
 static int dv7_defer_wanted(void) {
   if (P.isTrailer || P.isHls || strncmp(P.url, "http", 4) || !hls_conv_available()) return 0;
-  if (!strcmp(store_get("dv7Convert", "true"), "false") || best_learned("hlsHevcOk") == 0 || best_learned("dv81Hls") == 0) return 0;
+  if (!strcmp(store_get("dv7Convert", "true"), "false") || best_learned("hlsHevcOk") == 0 || (best_learned("dv81Hls") == 0 && best_learned("dv5Hls") == 0)) return 0; /* (the profile is not known yet: either lesson still open is enough to wait) */
   const TvCaps *c = best_caps(); if (!c || !c->dv) return 0;
   char l[1100]; snprintf(l, sizeof l, "%s %s", P.sname, P.st.filename); for (char *q = l; *q; q++) *q = (char)tolower((unsigned char)*q);
   int dv = has_word(l, "dv") || has_word(l, "dovi") || strstr(l, "dolby vision") || has_word(l, "dolbyvision");
@@ -992,7 +997,7 @@ static void dts_conv_tick(void) {
   if (P.dts.conv == 2 && P.dts.dv && !P.dts.dvSeen) { /* the converted picture: Dolby Vision on screen, or HDR10 all the same (then not converted again here) */
     if (video_state() == VID_PLAYING && video_live()) { if (!P.dts.dvAt) P.dts.dvAt = now_();
       else if (now_() - P.dts.dvAt >= 3) { char h[32]; if (video_hdr(h, sizeof h)) { P.dts.dvSeen = 1; int yes = strcasestr(h, "dolby") != NULL;
-          fprintf(stderr, "[dv] the TV shows the converted picture as %s\n", h); if (yes || strcasestr(h, "hdr")) best_learn("dv81Hls", yes); }
+          fprintf(stderr, "[dv] the TV shows the converted picture as %s\n", h); if (yes || strcasestr(h, "hdr") || P.dts.dv == 5) best_learn(dv_key(P.dts.dv), yes); } /* (profile 5 shown as anything else, "none" too: converting it brings nothing here) */
         else if (now_() - P.dts.dvAt >= 15) P.dts.dvSeen = 1; } } /* (this TV doesn't say) */
     else P.dts.dvAt = 0; }
 }
@@ -1000,7 +1005,8 @@ static void dts_conv_failed(const char *why) { /* the converted stream didn't pl
   fprintf(stderr, "[dts] the converted stream didn't play (%s)\n", why);
   video_unload(); /* first: the TV let go of the stream, so what it still asks of it (gone once the run stops) is not taken for this attempt's error */
   if (P.dts.dv) { /* the converted picture: not converted again on this TV; from here the file as it is, or (DTS) the sound alone converted */
-    best_learn("dv81Hls", 0); hls_conv_stop(); P.dts.dv = 0;
+    if (best_learned(dv_key(P.dts.dv)) != 1) best_learn(dv_key(P.dts.dv), 0); /* (a TV that has shown the converted picture as Dolby Vision: this film's trouble, not the TV's; tried again next time) */
+    hls_conv_stop(); P.dts.dv = 0;
     double at = P.lastPos > 1 ? P.lastPos : P.dts.convAt; P.startAt = at > 1 ? at : P.startAt; P.live = 0; P.liveT0 = 0; P.didResume = 0; P.curAud = -1;
     if (P.dts.copyA) { P.dts.conv = 0; video_load(P.url); return; }
     P.dts.conv = 1; P.dts.convAt = P.startAt; P.dts.convT0 = now_(); hls_conv_start(P.url, P.dts.convOrd, conv_flags(P.dts.convOrd));

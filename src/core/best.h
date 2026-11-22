@@ -11,7 +11,8 @@ typedef struct { int maxRes, hdr, dv, av1, dts, truehd; } TvCaps;   /* dts: 1 on
 const TvCaps *best_caps(void);         /* the kept answer, or NULL when never asked */
 /* what playback taught about this TV, kept for good in tvCaps2: "dts" (its decoder plays DTS: an error 200 on a
    DTS track says no, a DTS track playing 3 s without one says yes), "hlsHevcOk" (HEVC inside the local HLS
-   stream plays), "dv81Hls" (a profile 7 picture converted to 8.1 shows as Dolby Vision, not HDR10). -1 while not known */
+   stream plays), "dv81Hls" (a profile 7 picture converted to 8.1 shows as Dolby Vision, not HDR10), "dv5Hls" (a
+   profile 5 picture from the local stream shows as Dolby Vision). -1 while not known */
 int  best_learned(const char *what);
 void best_learn(const char *what, int yes);
 int  best_dts_mode(void);   /* Settings > Audio > DTS sound: 0 auto, 1 convert, 2 off (the TV plays it) */
