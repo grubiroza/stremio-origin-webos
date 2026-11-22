@@ -61,6 +61,7 @@ VidPlaneCaps video_plane_caps(void) { VidPlaneCaps c = { 1, 0, 0, 0 }; const cha
   if ((e = getenv("SB_GROW_LEAD"))) c.leadMs = atoi(e); if ((e = getenv("SB_GROW_STEP"))) { c.stepMs = atoi(e); c.perFrame = c.stepMs <= 0; } if ((e = getenv("SB_GROW")) && !strcmp(e, "cut")) c.cut = 1; return c; }
 void video_set_window(float x, float y, float w, float h) { if (R()) av_window(x, y, w, h); static char last[96]; char t[96]; snprintf(t, sizeof t, "%.0f,%.0f %.0fx%.0f", x, y, w, h); if (strcmp(t, last)) { snprintf(last, sizeof last, "%s", t); fprintf(stderr, "[video] window %s\n", t); } }
 void video_ss_pump(void) {}
+void video_hdr_values(int on) { (void)on; }
 void video_pump(void) {
   if (R()) { av_pump(); return; }
   double now = SDL_GetTicks() / 1000.0;

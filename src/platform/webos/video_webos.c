@@ -61,6 +61,7 @@ static volatile unsigned session;
 static struct {
   char mediaId[64]; VidState st; int live, loaded, ended, error, playing, pausedByUs, audioUnsup;
   char err[160]; double pos, dur, bufEnd, fps; int w, h, rate; long bits; char hdr[24], scan[24];
+  char sei[480], vui[160]; /* domar: the film's own HDR10 values as the TV's player reports them: the insides of videoInfo's "SEI" and "VUI" objects */
   VidTrack aud[16]; int naud; VidTrack txt[24]; int ntxt; int curAud, curTxt;
   int bindWanted, died, diedBehind;
 } S;
@@ -156,16 +157,40 @@ static int acb_window(const PlaneReq *q, long *task, const char **how) {
   *how = "window"; return acbWindow(acb, d.x, d.y, d.w, d.h, full, task);
 }
 static void acb_callback(long h, long task, long event, long appState, long playState, int reply) { (void)h; (void)task; fprintf(stderr, "[video] acb event=%ld app=%ld play=%ld reply=%d\n", event, appState, playState, reply); }
-static void video_data_json(char *vd, size_t n, const char *mid) {
-  int w, h, rate; long bits; char hdr[24], scan[24];
-  pthread_mutex_lock(&mu); w = S.w ? S.w : 1920; h = S.h ? S.h : 1080; rate = S.rate ? S.rate : 24; bits = S.bits; snprintf(hdr, sizeof hdr, "%s", S.hdr[0] ? S.hdr : "none"); snprintf(scan, sizeof scan, "%s", S.scan); pthread_mutex_unlock(&mu);
+/* domar: an HDR10 film's own values go on to the TV's picture side. The TV's player reports them with the film
+   (videoInfo: "SEI", the mastering display and the light levels; "VUI", the colour description), and the video data
+   handed to the ACB has the same fields under the same names (mediaSei, mediaVui), but they were always sent blank: all
+   zeros, and "unspecified" (2) for the colours. A webOS 3 set then stays in SDR (upstream #106); a webOS 4.5 one does
+   switch to HDR, but its picture side is told nothing of the film's brightness. Now the two objects are passed on as
+   they came, for HDR10 only (Dolby Vision carries its own; SDR keeps the values that always played). hdrOwn 0: blank,
+   as before (Settings > Playback) */
+static int hdrOwn = 1;
+void video_hdr_values(int on) { hdrOwn = on; }
+static void obj_inside(const char *p, const char *key, char *out, size_t cap) { /* what is between the braces of "key":{...}; "" when it is not there or has no room */
+  out[0] = 0; const char *o = strstr(p, key); if (!o) return; o += strlen(key); while (*o == ' ' || *o == ':') o++; if (*o != '{') return;
+  const char *e = obj_end(o); if (!e || (size_t)(e - o) > cap) return; snprintf(out, cap, "%.*s", (int)(e - o - 1), o + 1);
+}
+static int flat_values(const char *s) { /* names, numbers, true / false: nothing nested, nothing that could break the message */
+  if (!*s) return 0; for (; *s; s++) if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || strchr("\":,.- ", *s))) return 0; return 1; }
+static int video_data_json(char *vd, size_t n, const char *mid) { /* 1: the film's own HDR10 values are in it */
+  int w, h, rate; long bits; char hdr[24], scan[24], sei[480], vui[160];
+  pthread_mutex_lock(&mu); w = S.w ? S.w : 1920; h = S.h ? S.h : 1080; rate = S.rate ? S.rate : 24; bits = S.bits; snprintf(hdr, sizeof hdr, "%s", S.hdr[0] ? S.hdr : "none"); snprintf(scan, sizeof scan, "%s", S.scan);
+  snprintf(sei, sizeof sei, "%s", S.sei); snprintf(vui, sizeof vui, "%s", S.vui); pthread_mutex_unlock(&mu);
   if (strcasecmp(hdr, "HDR10") && strcasecmp(hdr, "DolbyVision")) snprintf(hdr, sizeof hdr, "none"); /* SDR keeps the values that always played */
+  int own = hdrOwn && !strcasecmp(hdr, "HDR10") && flat_values(sei) && flat_values(vui);
+  if (own && !strstr(vui, "videoFullRangeFlag") && strlen(vui) + 32 < sizeof vui) strcat(vui, ",\"videoFullRangeFlag\":false"); /* (the TV's player leaves it out when it is false; the message keeps the four fields it always had) */
   snprintf(vd, n, "{\"content\":\"movie\",\"context\":\"%s\",\"video\":{\"adaptive\":false,\"bitRate\":%ld,\"data3D\":{\"currentPattern\":\"2d\",\"originalPattern\":\"2d\",\"typeLR\":\"LR\"},"
     "\"frameRate\":%d.0,\"hdrType\":\"%s\",\"height\":%d,\"width\":%d,"
-    "\"mediaSei\":{\"displayPrimariesX0\":0,\"displayPrimariesX1\":0,\"displayPrimariesX2\":0,\"displayPrimariesY0\":0,\"displayPrimariesY1\":0,\"displayPrimariesY2\":0,\"maxContentLightLevel\":0,\"maxDisplayMasteringLuminance\":0,\"maxPicAverageLightLevel\":0,\"minDisplayMasteringLuminance\":0,\"whitePointX\":0,\"whitePointY\":0},"
-    "\"mediaVui\":{\"colorPrimaries\":2,\"matrixCoeffs\":2,\"transferCharacteristics\":2,\"videoFullRangeFlag\":false},"
+    "\"mediaSei\":{%s},"
+    "\"mediaVui\":{%s},"
     "\"hfr\":false,\"path\":\"network\",\"pixelAspectRatio\":{\"height\":1,\"width\":1},\"rotation\":\"0\",\"scanType\":\"%s\",\"specificRendering\":\"none\"}}",
-    mid, bits > 0 ? bits : 8000000L, rate, hdr, h, w, strstr(scan, "inter") ? "VIDEO_INTERLACED" : "VIDEO_PROGRESSIVE");
+    mid, bits > 0 ? bits : 8000000L, rate, hdr, h, w,
+    own ? sei : "\"displayPrimariesX0\":0,\"displayPrimariesX1\":0,\"displayPrimariesX2\":0,\"displayPrimariesY0\":0,\"displayPrimariesY1\":0,\"displayPrimariesY2\":0,\"maxContentLightLevel\":0,\"maxDisplayMasteringLuminance\":0,\"maxPicAverageLightLevel\":0,\"minDisplayMasteringLuminance\":0,\"whitePointX\":0,\"whitePointY\":0",
+    own ? vui : "\"colorPrimaries\":2,\"matrixCoeffs\":2,\"transferCharacteristics\":2,\"videoFullRangeFlag\":false",
+    strstr(scan, "inter") ? "VIDEO_INTERLACED" : "VIDEO_PROGRESSIVE");
+  if (own) fprintf(stderr, "[video] the film's own HDR10 values go on to the TV: {%s} {%s}\n", sei, vui);
+  else if (!strcasecmp(hdr, "HDR10")) fprintf(stderr, "[video] HDR10, its values not passed on (%s)\n", !hdrOwn ? "switched off" : "the TV's player gave none that can be read");
+  return own;
 }
 /* domar: the TV is told when the film is paused and when it plays again (AcbAPI_setState: 2 playing, 3 paused). It was
    told once, when the film was bound, and for the TV a paused film went on "playing". Its own screen saver reads this
@@ -184,7 +209,7 @@ static void *bind_plane(void *u) {
   if (!ALIVE()) return NULL; fprintf(stderr, "[video] bind loaded=%d\n", acbState(acb, 1, 1, &task)); sleep_ms(200);
   if (!ALIVE()) return NULL; fprintf(stderr, "[video] bind connect=%d\n", acbConnect(acb, 0, &task)); sleep_ms(200);
   if (!ALIVE()) return NULL;
-  { char vd[2048]; video_data_json(vd, sizeof vd, mid); fprintf(stderr, "[video] bind videoData=%d\n", acbVideoData(acb, vd, &task));
+  { char vd[2048]; int own = video_data_json(vd, sizeof vd, mid); fprintf(stderr, "[video] bind videoData=%d%s\n", acbVideoData(acb, vd, &task), own ? " (with the film's HDR10 values)" : "");
     if (acbAudioData) { char ad[160]; snprintf(ad, sizeof ad, "{\"context\":\"%s\",\"audio\":{\"immersive\":\"none\"}}", mid); fprintf(stderr, "[video] bind audioData=%d\n", acbAudioData(acb, ad, &task)); } }
   sleep_ms(300);
   if (!ALIVE()) return NULL;
@@ -263,7 +288,8 @@ static bool on_event(LSHandle *h, LSMessage *m, void *ctx) {
   if (strstr(p, "videoInfo")) { double v;
     if ((v = num_of(p, "\"width\":")) > 0) S.w = (int)v; if ((v = num_of(p, "\"height\":")) > 0) S.h = (int)v;
     if ((v = num_of(p, "\"frameRate\":")) > 0) { S.rate = (int)v; S.fps = v; } if ((v = num_of(p, "\"bitRate\":")) > 0) S.bits = (long)v;
-    str_in(p, NULL, "\"hdrType\":\"", S.hdr, sizeof S.hdr); str_in(p, NULL, "\"scanType\":\"", S.scan, sizeof S.scan); }
+    str_in(p, NULL, "\"hdrType\":\"", S.hdr, sizeof S.hdr); str_in(p, NULL, "\"scanType\":\"", S.scan, sizeof S.scan);
+    obj_inside(p, "\"SEI\"", S.sei, sizeof S.sei); obj_inside(p, "\"VUI\"", S.vui, sizeof S.vui); } /* (domar: the film's own HDR10 values, for video_data_json) */
   if (strstr(p, "loadCompleted")) { S.loaded = 1; if (acb) S.bindWanted = 1; }
   if (strstr(p, "bufferRange")) { double e = num_of(p, "\"endTime\":"); if (e >= 0) S.bufEnd = e + (timed.on ? timed.off : 0); }
   if (strstr(p, "bufferingStart")) { if (S.st == VID_PLAYING || S.st == VID_LOADING) S.st = VID_BUFFERING; if (!hold) { S.pos = pos_now(); posAt = SDL_GetTicks() / 1000.0; hold_on(); } }

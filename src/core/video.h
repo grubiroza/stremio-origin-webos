@@ -58,4 +58,5 @@ int    video_audio_unsupported(void);        /* 1 when the TV plays the picture 
 int    video_edge_colors(uint32_t *out4); /* the picture's left, top, right, bottom colours (0xffRRGGBB) when the platform can see its frames; 0 when not (a TV's hardware plane) */
 void   video_pump(void);                     /* delivers the platform's events; call per frame */
 void   video_ss_pump(void);                  /* domar: the TV's screen-saver request asked for as soon as it can be, playing or not; every frame */
+void   video_hdr_values(int on);             /* domar: webOS 3 / 4: an HDR10 film's own mastering values and colour description are passed on to the TV's picture side (1, the default), or none are, as before (0); taken at the next film's start */
 #endif
