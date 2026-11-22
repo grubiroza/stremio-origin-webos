@@ -270,7 +270,7 @@ static void list_parse(SubJob *j) {
   if (js) j->status = 1000; /* read */
   int n = arr ? cJSON_GetArraySize(arr) : 0; if (n > 400) n = 400; j->got = calloc(n ? n : 1, sizeof *j->got);
   char langs[64][16]; int per[64], nl = 0; const FindSrc *fs = &j->fq->src[j->src];
-  if (arr) cJSON_ArrayForEach(s, arr) { if (j->ngot >= n) break; const char *url = js_str(s, "url", NULL); if (!url || !*url || strlen(url) >= 1024) continue;
+  if (arr) cJSON_ArrayForEach(s, arr) { if (j->ngot >= n) break; const char *url = js_str(s, "url", NULL); if (!url || !*url || strlen(url) >= SB_SUB_URL) continue; /* (domar: 1024 stood here after SB_SUB_URL grew to 2048: an addon's subtitle with a longer address was still left out of the list) */
     char lang[24]; snprintf(lang, sizeof lang, "%s", js_str(s, "lang", "und")); for (char *p = lang; *p; p++) if (*p >= 'A' && *p <= 'Z') *p += 32; if (!*lang) snprintf(lang, sizeof lang, "und");
     char key[16]; subs_lang_canon(lang, key, sizeof key);
     int li = -1; for (int i = 0; i < nl; i++) if (!strcmp(langs[i], key)) li = i; if (li < 0 && nl < 64) { li = nl++; snprintf(langs[li], sizeof langs[li], "%s", key); per[li] = 0; } if (li < 0) continue;
