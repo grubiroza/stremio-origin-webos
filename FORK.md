@@ -32,6 +32,7 @@ this branch are not rewritten, so links to them keep working.
 | [90f2fa2](https://github.com/grubiroza/stremio-origin-webos/commit/90f2fa2b6ef32f692f126773188895b916e51254) | streams sheet: the pointer held on a row opens its details, as the OK key held does | [#104](https://github.com/stremio-origin/webos/issues/104) |
 | [4e88341](https://github.com/grubiroza/stremio-origin-webos/commit/4e883413f76f05c32440503615faac394df24051) | an addon's `?query` after /manifest.json stays on every request, as the official core sends it (it was dropped) | [#107](https://github.com/stremio-origin/webos/issues/107) |
 | [4daf860](https://github.com/grubiroza/stremio-origin-webos/commit/4daf86081d0ede35941fd6da2f3d0a2aa3184f2f) | a correction to b21f173: an addon's subtitle with an address of 1024 characters or more was still left out of the list | [#30](https://github.com/stremio-origin/webos/issues/30) |
+| [bc5b785](https://github.com/grubiroza/stremio-origin-webos/commit/bc5b78531c3e5a0adc79de6788126bf1a80f0246) | webOS 3 / 4: an HDR10 film's own mastering values and colour description are passed on to the TV (they went blank); a switch in Settings > Playback | another user's [#106](https://github.com/stremio-origin/webos/issues/106), fixed upstream for the next update |
 
 ### Upstream's answers so far (2026-11-22)
 
@@ -42,6 +43,8 @@ this branch are not rewritten, so links to them keep working.
   app's Local Files addon is no longer asked on the TV. Other addons with no streams keep their tab.
 - [#104](https://github.com/stremio-origin/webos/issues/104): not taken, as it changes how the remote feels everywhere.
   Both commits stay here for those who use a Magic Remote the way I do.
+- [#30](https://github.com/stremio-origin/webos/issues/30): fixed for the next update. Addon addresses get room for
+  4,000 characters everywhere they are used, and a subtitle's own address 2,000.
 
 ## Features and preferences (not reported yet; here as they are)
 
