@@ -145,6 +145,7 @@ static struct {
   int ssOn; double ssAt, ssCheckAt, lastAct; double size; char sizeTxt[24]; unsigned sizeTok; int httpSt, sizeAns, canNext; double errAt; int lastVw, lastVh; double aspRefreshAt;
   /* the pointer: the time bubble over the bar */ int hvOn, barDown; float hvP; Mo hvA;
   int extTry, embKnown, embWaitOver, sameWaitOver; double extRetryAt, embWaitAt, sameWaitAt; /* sameWait: a show's addon file, its addon's list awaited (10 s at most) */
+  int prefWaitOver; double prefWaitAt; /* domar: the preferred subtitle addon's answer awaited (10 s at most) */
   /* the stream as its addon gave it (headers, group, file facts); the subtitles addons installed for this video, the
      language chosen in their tab */
   Stream st; int nSubAddons; char subLang[24]; unsigned ytTok;
@@ -456,6 +457,7 @@ static void try_resume(void) {
 /* ---- subtitles ---- */
 static const char *want_sub(void) { return store_get("subsLang", "eng"); }
 static const char *want_sub2(void) { return store_get("subsLang2", ""); } /* domar: the second language (Settings > Subtitles), for a film with none in the first; "" none */
+static const char *want_addon(void) { return store_get("subsAddon", ""); } /* domar: the preferred subtitle addon, by its name (Settings > Subtitles); "" none */
 /* Settings > Subtitles > Subtitle preference: Forced only = a film starts with a forced track in that language (only
    the lines in another language and the signs), or none; All subtitles = as always (PR #50) */
 static int want_forced(void) { return !strcmp(store_get("subsMode", "all"), "forced"); }
@@ -650,6 +652,13 @@ static void auto_sub(void) {
   for (int j = 0; j < P.nEmb; j++) if (lang_match(P.emb[j].lang, w) && (!fo || emb_forced(&P.emb[j])) && (em < 0 || (!fo && P.emb[em].forced && !P.emb[j].forced))) em = j;
   if (em >= 0) { P.autoSubDone = 1; set_emb_sub(P.emb[em].idx); return; } /* embedded wins: it is in sync with the file */
   if (!P.embKnown && !P.embWaitOver) { if (!P.embWaitAt) P.embWaitAt = now_() + 8; return; } /* the file's own tracks get 8 s to show up first */
+  /* domar: the preferred subtitle addon (Settings > Subtitles): after the file's own track, its subtitles in this
+     language come before the built-in list's and the other addons' (the built-in list answers first as a rule, and its
+     first file was what played). Its answer is waited for, 10 s at most; when it has none here, the usual order */
+  { const char *pa = want_addon();
+    if (*pa) { for (int pass = 0; pass < 2; pass++) for (int i = 0; i < P.nAdx; i++) if (!strcmp(P.adx[i].addon, pa) && lang_match(P.adx[i].lang, w) && (!fo || P.adx[i].forced) && (pass || variant_ok(P.adx[i].lang, w))) {
+          fprintf(stderr, "[subs] the preferred addon's (%s)\n", second ? "the second language" : "the language asked for"); P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; }
+      if (P.adxLoading && subs_find_waiting(pa) && !P.prefWaitOver) { if (!P.prefWaitAt) P.prefWaitAt = now_() + 10; return; } } }
   for (int pass = 0; pass < 2; pass++) { /* the variant asked for first (Brazilian for Brazilian, European for European), then any */
     for (int i = 0; i < P.nExt; i++) if (lang_match(P.ext[i].lang, w) && (!fo || P.ext[i].forced) && (pass || variant_ok(P.ext[i].lang, w))) { P.autoSubDone = 1; set_ext_sub(1, &P.ext[i]); sync_auto_arm(); return; }
     for (int i = 0; i < P.nAdx; i++) if (lang_match(P.adx[i].lang, w) && (!fo || P.adx[i].forced) && (pass || variant_ok(P.adx[i].lang, w))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; } }
@@ -2580,6 +2589,7 @@ void player_tick(float dt) {
   if (P.adxRetryAt && now_() >= P.adxRetryAt) { P.adxRetryAt = 0; load_addon_subs(P.adxTry + 1); }
   if (P.embWaitAt && !P.embWaitOver && now_() >= P.embWaitAt) { P.embWaitOver = 1; auto_sub(); }
   if (P.sameWaitAt && !P.sameWaitOver && now_() >= P.sameWaitAt) { P.sameWaitOver = 1; auto_sub(); }
+  if (P.prefWaitAt && !P.prefWaitOver && now_() >= P.prefWaitAt) { P.prefWaitOver = 1; fprintf(stderr, "[subs] the preferred addon has not answered in 10 s: the usual order\n"); auto_sub(); }
   sub_check(); ass_sync();
   sk_tick(); loc_apply();
   if (P.started && !P.ldd && dur() > 0) P.ldd = 1; /* the length is known: the loading line fades before the picture comes */

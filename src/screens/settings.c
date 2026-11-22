@@ -17,6 +17,7 @@
 #include "core/p2p.h"
 #include "core/json.h"
 #include "core/best.h"
+#include "core/addons.h"
 #include "ui/glass.h"
 #include "ui/gfx.h"
 #include "ui/text.h"
@@ -78,7 +79,7 @@ static const Opt SS_OPTS[] = { { "0", "Off" }, { "1", "1 min" }, { "2", "2 min" 
 static const Opt ACCENT_OPTS[] = { { "logo", "From the logo" }, { "adaptive", "From the artwork" }, { "purple", "Purple" }, { "violet", "Violet" }, { "fuchsia", "Fuchsia" }, { "pink", "Pink" }, { "rose", "Rose" }, { "red", "Red" }, { "orange", "Orange" }, { "amber", "Amber" }, { "gold", "Gold" }, { "lime", "Lime" }, { "green", "Green" }, { "emerald", "Emerald" }, { "teal", "Teal" }, { "cyan", "Cyan" }, { "sky", "Sky" }, { "blue", "Blue" }, { "indigo", "Indigo" }, { "graphite", "Graphite" } };
 #define NCAT 11
 #define MAXROWS 48
-static Setting playBase[14], playS[10], seekS[6], subsS[12], audS[4], lookS[6], langS[44], langOpt, keyS[4], traktS[6], addonS[40], acctS[1], supS[10];
+static Setting playBase[14], playS[10], seekS[6], subsS[13], audS[4], lookS[6], langS[44], langOpt, keyS[4], traktS[6], addonS[40], acctS[1], supS[10];
 static Cat cats[NCAT]; static int ncat; /* (Keys leaves when this build carries every key) */
 
 /* the layout, in the web's pixels: the grid is centred, 1600 wide, 150 from the top */
@@ -240,23 +241,32 @@ static void build(void) {
   usb_row();
   set_s(&subsS[0], "subsLang", "Default subtitles", "Chosen by itself when a film starts", LANG_OPTS, NLANGOPTS, "eng");
   set_s(&subsS[1], "subsLang2", "Second subtitle language", "Chosen when a film has none in the first", LANG_OPTS, NLANGOPTS, ""); /* domar: as the official apps' secondary language */
+  /* domar: the preferred subtitle addon, by its name: None, then every subtitles addon switched on here; the one kept
+     is listed even when it is not installed just now, so the row never shows another than the one in use */
+  { Setting *s = &subsS[2]; set_s(s, "subsAddon", "Preferred subtitle addon", "Its subtitles are taken first when the file has none of its own in your language", NULL, 0, "");
+    int n = 0; const char *cur = store_get("subsAddon", ""); int have = !*cur; s->dyn[n].v = ""; s->dyn[n].lb = "None"; n++;
+    cJSON *l = sb_addons(); const cJSON *a;
+    if (l) cJSON_ArrayForEach(a, l) { if (n >= 39 || !(addon_serves_subs(a, "movie", NULL) || addon_serves_subs(a, "series", NULL))) continue; const char *nm = addon_name(a); int dup = 0; for (int i = 1; i < n; i++) if (!strcmp(s->dynS[i], nm)) dup = 1; if (dup) continue;
+      snprintf(s->dynS[n], 64, "%s", nm); s->dyn[n].v = s->dyn[n].lb = s->dynS[n]; if (!strcmp(cur, s->dynS[n])) have = 1; n++; }
+    if (!have) { snprintf(s->dynS[n], 64, "%s", cur); s->dyn[n].v = s->dyn[n].lb = s->dynS[n]; n++; }
+    s->opts = s->dyn; s->nopts = n; }
   { static const Opt SM[] = { { "all", "All subtitles" }, { "forced", "Forced only" } }; /* (PR #50: forced tracks are the lines in another language and the signs) */
-    set_s(&subsS[2], "subsMode", "Subtitle preference", "Forced only: just the lines in another language and the signs, from a forced track", SM, 2, "all"); }
+    set_s(&subsS[3], "subsMode", "Subtitle preference", "Forced only: just the lines in another language and the signs, from a forced track", SM, 2, "all"); }
   /* domar: the size in %, 5 % at a time from 70 to 180 (seven steps before, 20 % apart); the old step carries over */
   { static Opt SZO[23]; static char sv[23][4], sl[23][8]; for (int i = 0; i < 23; i++) { snprintf(sv[i], 4, "%d", 70 + i * 5); snprintf(sl[i], 8, "%d%%", 70 + i * 5); SZO[i].v = sv[i]; SZO[i].lb = sl[i]; }
     if (!store_get("subsSizePct", "")[0]) { static const int OLD[7] = { 70, 80, 100, 120, 140, 160, 180 }; int i = atoi(store_get("subtitleSize", "2")); char b[8]; snprintf(b, sizeof b, "%d", OLD[i < 0 || i > 6 ? 2 : i]); store_set("subsSizePct", b); }
-    set_s(&subsS[3], "subsSizePct", "Size", "Also in the player, under Subtitles", SZO, 23, "100"); }
+    set_s(&subsS[4], "subsSizePct", "Size", "Also in the player, under Subtitles", SZO, 23, "100"); }
   { static Opt FL[SUBF_N], FA[SUBF_N]; static char fv[SUBF_N][4]; for (int i = 0; i < SUBF_N; i++) { snprintf(fv[i], sizeof fv[i], "%d", i); FL[i].v = FA[i].v = fv[i]; FL[i].lb = SUBF_LAT[i]; FA[i].lb = SUBF_AR[i]; } /* (the fonts by name; Default the app's own) */
-    set_s(&subsS[4], "subsFont", "Font", "Also in the player, under Subtitles", FL, SUBF_N, "0"); set_s(&subsS[5], "subsFontAr", "Arabic font", "For subtitles in Arabic", FA, SUBF_N, "0"); }
-  set_s(&subsS[6], "subsColor", "Colour", "", COLORS, 3, "#ffffff");
-  set_s(&subsS[7], "subsOutlineColor", "Outline", "", OUTL, 2, "#000000");
-  set_s(&subsS[8], "subsBgStyle", "Background", "", BGS, 3, "0");
+    set_s(&subsS[5], "subsFont", "Font", "Also in the player, under Subtitles", FL, SUBF_N, "0"); set_s(&subsS[6], "subsFontAr", "Arabic font", "For subtitles in Arabic", FA, SUBF_N, "0"); }
+  set_s(&subsS[7], "subsColor", "Colour", "", COLORS, 3, "#ffffff");
+  set_s(&subsS[8], "subsOutlineColor", "Outline", "", OUTL, 2, "#000000");
+  set_s(&subsS[9], "subsBgStyle", "Background", "", BGS, 3, "0");
   /* the height in %, 1 % at a time as in the player (where it can be seen while set); a height kept as one of the old six steps carries over */
   { static Opt PP[29]; static char pv[29][4], pl[29][8]; for (int i = 0; i < 29; i++) { snprintf(pv[i], 4, "%d", i + 2); snprintf(pl[i], 8, "%d%%", i + 2); PP[i].v = pv[i]; PP[i].lb = pl[i]; }
     if (!store_get("subsPosPct", "")[0]) { static const int OLD[6] = { 3, 8, 13, 18, 23, 28 }; int i = atoi(store_get("subsPosition", "1")); char b[8]; snprintf(b, sizeof b, "%d", OLD[i < 0 || i > 5 ? 1 : i]); store_set("subsPosPct", b); }
-    set_s(&subsS[10], "subsPosPct", "Position", "How high over the bottom of the picture; also in the player", PP, 29, "8"); }
-  { static const Opt BR[] = { { "100", "100%" }, { "80", "80%" }, { "60", "60%" }, { "40", "40%" } }; set_s(&subsS[9], "subsBright", "Brightness", "", BR, 4, "100"); } /* (PR #39: softer on an OLED in the dark; under Background) */
-  set_s(&subsS[11], "subsAssStyle", "Styled subtitles", "Signs, fonts and effects as the film\xe2\x80\x99s own ASS / SSA subtitles draw them", ASSO, 2, "styled");
+    set_s(&subsS[11], "subsPosPct", "Position", "How high over the bottom of the picture; also in the player", PP, 29, "8"); }
+  { static const Opt BR[] = { { "100", "100%" }, { "80", "80%" }, { "60", "60%" }, { "40", "40%" } }; set_s(&subsS[10], "subsBright", "Brightness", "", BR, 4, "100"); } /* (PR #39: softer on an OLED in the dark; under Background) */
+  set_s(&subsS[12], "subsAssStyle", "Styled subtitles", "Signs, fonts and effects as the film\xe2\x80\x99s own ASS / SSA subtitles draw them", ASSO, 2, "styled");
   /* the audio language: Original (the film's own track, as it starts) first and by default, then a language, picked by
      itself when a film has it (one row: the old "Auto audio track" switch is folded in: off was Original) */
   { static Opt AUDO[NLANGOPTS]; AUDO[0].v = "orig"; AUDO[0].lb = "Original"; for (int i = 1; i < NLANGOPTS; i++) AUDO[i] = LANG_OPTS[i];
@@ -284,7 +294,7 @@ static void build(void) {
   Cat c[NCAT] = {
     { "Watch", "Playback", "set_play", "Best stream, next episode, picture size", NULL, playS, 6, 0 }, /* (the counts: play_layout) */
     { "Watch", "Seek bar", "set_seek", "Seek step, chapters, previews", NULL, seekS, 4, 0 },
-    { "Watch", "Subtitles", "set_subs", "Language, size, font, colour", "subs", subsS, 12, 0 },
+    { "Watch", "Subtitles", "set_subs", "Language, size, font, colour", "subs", subsS, 13, 0 },
     { "Watch", "Audio", "set_aud", "Default audio language, DTS, interface sounds", NULL, audS, 4, 0 },
     { "Screens", "Appearance", "set_look", "Accent colour, screensaver, clock, trailers", "look", lookS, 6, 0 },
     { "Screens", "Language", "set_lang", "The language of the app", NULL, langS, nl, 0 },

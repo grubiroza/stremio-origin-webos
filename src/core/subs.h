@@ -31,6 +31,7 @@ void subs_list(const char *type, const char *vid, void (*cb)(SubEntry *subs, int
 typedef struct { char type[16], vid[SB_VID], url[4096], filename[256], hash[24]; double size; int hashable; double fps; } SubQuery; /* fps: the picture's, when known (Auto-sync) */
 void subs_find(const SubQuery *q, const SubEntry *own, int nown, void (*cb)(SubEntry *subs, int n, int final, int ok, void *ud), void *ud);
 int  subs_addons_for(const char *type, const char *vid);   /* installed subtitles addons serving it */
+int  subs_find_waiting(const char *addon);                 /* domar: the last subs_find still waits for the addon of this name (main thread) */
 int  subs_os_hash(const char *url, double *size, char out[17]);  /* worker threads only (it blocks); *size: known size or 0 */
 int  subs_hash_of(const char *url, char out[24], double *size);  /* the hash subs_find worked out for this url, if it did (any thread) */
 struct cJSON;

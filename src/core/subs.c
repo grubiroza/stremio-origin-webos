@@ -261,8 +261,9 @@ void subs_list(const char *type, const char *vid, void (*cb)(SubEntry *, int, in
 /* ---- the addons' lists: every installed subtitles addon for this video, asked with the file's hash, size and name
    when known (/subtitles/{type}/{id}/videoHash=..&videoSize=..&filename=...json); the subtitles the stream carries first.
    The built-in list above is never mixed in. ---- */
-typedef struct { char name[64], base[SB_BASE_MAX]; int from, order; } FindSrc;
+typedef struct { char name[64], base[SB_BASE_MAX]; int from, order, done; } FindSrc; /* domar: done: it answered, or failed */
 struct FindQ { unsigned tok; SubQuery q; FindSrc src[16]; int nsrc, pending, nok; SubEntry *all; int n, cap; void (*cb)(SubEntry *, int, int, int, void *); void *ud; };
+static FindQ *curFind; /* domar: the lookup asked for last, while a source of its is still awaited (main thread only: subs_find_waiting) */
 static void list_parse(SubJob *j) {
   cJSON *js = j->body && j->status == 200 ? cJSON_ParseWithLength((const char *)j->body, j->len) : NULL; const cJSON *arr = js_arr(js, "subtitles"), *s;
   if (j->body && j->status == 200 && !js) fprintf(stderr, "[subs] %s: the answer is not JSON\n", j->fq->src[j->src].name);
@@ -287,7 +288,7 @@ static int cmp_entry(const void *a, const void *b) { const SubEntry *x = a, *y =
 static void find_deliver(FindQ *f) {
   SubEntry *out = malloc((f->n ? f->n : 1) * sizeof *out); memcpy(out, f->all, f->n * sizeof *out);
   f->cb(out, f->n, f->pending <= 0, f->nok, f->ud);
-  if (f->pending <= 0) { free(f->all); free(f); }
+  if (f->pending <= 0) { if (curFind == f) curFind = NULL; free(f->all); free(f); }
 }
 static void find_add(FindQ *f, const SubEntry *e, int n) {
   for (int i = 0; i < n; i++) { int dup = 0; for (int k = 0; k < f->n && !dup; k++) dup = !strcmp(f->all[k].url, e[i].url); if (dup) continue;
@@ -296,7 +297,7 @@ static void find_add(FindQ *f, const SubEntry *e, int n) {
   qsort(f->all, f->n, sizeof *f->all, cmp_entry);
 }
 static void find_answer(SubJob *j) {
-  FindQ *f = j->fq; f->pending--; if (j->status == 1000) f->nok++;
+  FindQ *f = j->fq; f->pending--; f->src[j->src].done = 1; if (j->status == 1000) f->nok++;
   if (j->status != 1000) fprintf(stderr, "[subs] %s: %s\n", f->src[j->src].name, j->status > 0 ? "HTTP error" : "no answer");
   else fprintf(stderr, "[subs] %s: %d subtitles\n", f->src[j->src].name, j->ngot);
   find_add(f, j->got, j->ngot); find_deliver(f);
@@ -322,10 +323,18 @@ void subs_find(const SubQuery *q, const SubEntry *own, int nown, void (*cb)(SubE
   if (a) cJSON_ArrayForEach(ad, a) { order++; if (f->nsrc >= 16 || !addon_serves_subs(ad, q->type, q->vid)) continue; FindSrc *s = &f->src[f->nsrc++];
     snprintf(s->name, sizeof s->name, "%s", addon_name(ad)); addon_base(ad, s->base, sizeof s->base); s->from = SUB_ADDON; s->order = order; }
   if (nown) find_add(f, own, nown);
-  f->pending = f->nsrc;
+  f->pending = f->nsrc; curFind = f;
   if (!f->nsrc) { find_deliver(f); return; } /* only the stream's own: final at once */
   if (nown) { SubEntry *out = malloc(f->n * sizeof *out); memcpy(out, f->all, f->n * sizeof *out); cb(out, f->n, 0, 0, ud); } /* the stream's own at once */
   pthread_t t; if (pthread_create(&t, NULL, find_main, f)) find_main(f); else pthread_detach(t);
+}
+/* domar: the lookup asked for last still waits for the addon of this name (the preferred one: its subtitles are worth a
+   moment before another source's are taken). 0 once it answered or failed, and when it was never asked (it does not
+   serve this video) */
+int subs_find_waiting(const char *addon) {
+  if (!curFind || !addon || !*addon) return 0;
+  for (int i = 0; i < curFind->nsrc; i++) if (!curFind->src[i].done && !strcmp(curFind->src[i].name, addon)) return 1;
+  return 0;
 }
 
 /* ---- YouTube timed text (trailer captions) ------------------------------------------------------ */
