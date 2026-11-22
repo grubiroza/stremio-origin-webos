@@ -18,9 +18,15 @@ void addon_base(const cJSON *ad, char *out, size_t cap) {
     if (full >= cap && (cap >= SB_BASE_MAX || cJSON_GetArraySize(js_arr(js_obj(ad, "manifest"), "catalogs")) > 0)) { static unsigned said[32]; static int nsaid; unsigned h = 2166136261u ^ (unsigned)cap; int seen = 0;
       for (const char *c = tu; *c; c++) h = (h ^ (unsigned char)*c) * 16777619u; for (int i = 0; i < nsaid; i++) if (said[i] == h) seen = 1;
       if (!seen) { if (nsaid < 32) said[nsaid++] = h; fprintf(stderr, "[addons] %s: its address has %d characters, only %d are used for %s\n", addon_name(ad), (int)full, (int)cap - 1, cap >= SB_BASE_MAX ? "its requests" : "its catalogs"); } } }
-  snprintf(out, cap, "%s", js_str(ad, "transportUrl", "")); char *m = strstr(out, "/manifest.json"); if (m) *m = 0;
+  /* domar: a "?query" after /manifest.json (a token, a setup) stays, at the end: addon_url and addon_join put it after
+     the path of every request, as the official core does (it swaps /manifest.json for the request's path and leaves
+     the rest of the address as it is). It was dropped here, so such an addon was asked without its setup */
+  const char *tu = js_str(ad, "transportUrl", ""), *m = strstr(tu, "/manifest.json"), *q = m && m[14] == '?' && m[15] ? m + 14 : NULL;
+  snprintf(out, cap, "%.*s", m ? (int)(m - tu) : (int)strlen(tu), tu);
   size_t n = strlen(out); while (n && out[n - 1] == '/') out[--n] = 0;
+  if (q && n + 1 < cap) snprintf(out + n, cap - n, "%s", q);
 }
+void addon_join(char *out, size_t cap, const char *base, const char *tail) { const char *q = strchr(base, '?'); snprintf(out, cap, "%.*s%s%s", q ? (int)(q - base) : (int)strlen(base), base, tail, q ? q : ""); }
 const char *addon_name(const cJSON *ad) { const char *n = js_str(js_obj(ad, "manifest"), "name", ""); return *n ? n : "Addon"; }
 
 static int has_str(const cJSON *arr, const char *s) { const cJSON *t; cJSON_ArrayForEach(t, arr) if (cJSON_IsString(t) && !strcmp(t->valuestring, s)) return 1; return 0; }
@@ -55,7 +61,8 @@ void addon_extra_add(char *ex, size_t cap, const char *name, const char *value) 
 }
 void addon_url(char *out, size_t cap, const char *base, const char *resource, const char *type, const char *id, const char *extra) {
   char t[96], i[400]; addon_urlenc(type, t, sizeof t); addon_urlenc(id, i, sizeof i);
-  snprintf(out, cap, "%s/%s/%s/%s%s%s.json", base, resource, t, i, extra && *extra ? "/" : "", extra && *extra ? extra : "");
+  const char *q = strchr(base, '?'); /* domar: the address's own query goes after the path */
+  snprintf(out, cap, "%.*s/%s/%s/%s%s%s.json%s", q ? (int)(q - base) : (int)strlen(base), base, resource, t, i, extra && *extra ? "/" : "", extra && *extra ? extra : "", q ? q : "");
 }
 
 int addon_cat_extra(const cJSON *cat, const char *name, int *req, const cJSON **opts, int *optsLimit) {

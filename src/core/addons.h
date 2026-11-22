@@ -15,7 +15,10 @@ int  addon_count_subs(const char *type, const char *id);
 /* domar: room for an addon's address. Some carry their whole setup in it (Comet: 730 and 930 characters on this
    account); cut at 511, the setup arrived broken and the addon answered "obsolete configuration" */
 #define SB_BASE_MAX 2048
-void addon_base(const cJSON *ad, char *out, size_t cap);       /* the transport URL without /manifest.json */
+void addon_base(const cJSON *ad, char *out, size_t cap);       /* the transport URL without /manifest.json; domar: a "?query" that followed it stays at the end */
+/* domar: base (what addon_base gave, or a catalog's path) with tail after its path and before its "?query", if it has
+   one: "https://host/x?k=v" + "/catalog/movie/top" = "https://host/x/catalog/movie/top?k=v". out is not base */
+void addon_join(char *out, size_t cap, const char *base, const char *tail);
 const char *addon_name(const cJSON *ad);                      /* its manifest's name ("Addon") */
 /* "{base}/{resource}/{type}/{id}[/{extra}].json", each part encoded; extra already "a=b&c=d" (NULL or "": none) */
 void addon_url(char *out, size_t cap, const char *base, const char *resource, const char *type, const char *id, const char *extra);

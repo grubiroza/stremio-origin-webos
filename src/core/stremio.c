@@ -131,7 +131,7 @@ void sb_sync_addons(void (*cb)(int, void *), void *ud) {
 /* ---- catalogs ------------------------------------------------------------------------------ */
 _Static_assert(SB_CAT_PATH >= SB_BASE_MAX + 440 && SB_CAT_URL >= SB_CAT_PATH + 208, "a catalog's address must hold its addon's whole address");
 static const char *type_label(const char *t) { return !strcmp(t, "movie") ? T("Movies") : !strcmp(t, "series") ? T("Series") : t; }
-static void def_url(CatalogDef *d) { snprintf(d->url, sizeof d->url, "%s%s%s.json", d->path, d->extra[0] ? "/" : "", d->extra); }
+static void def_url(CatalogDef *d) { char tl[240]; snprintf(tl, sizeof tl, "%s%s.json", d->extra[0] ? "/" : "", d->extra); addon_join(d->url, sizeof d->url, d->path, tl); } /* (domar: the addon's own "?query", kept at the end of the path, stays last) */
 static void def_set(CatalogDef *d, const char *title, const char *type, const char *path, const char *extra, int skip, const char *key) {
   memset(d, 0, sizeof *d); copy_str(d->title, sizeof d->title, title); copy_str(d->type, sizeof d->type, type); copy_str(d->path, sizeof d->path, path);
   copy_str(d->extra, sizeof d->extra, extra ? extra : ""); d->skip = skip; copy_str(d->key, sizeof d->key, key); def_url(d);
@@ -147,7 +147,7 @@ static int board_defs(CatalogDef *out, int max, int from) {
       if (ctype && cid && *ctype && *cid && addon_cat_default_extra(cat, ex, sizeof ex) == 0 && seen++ >= from && n < max) {
         CatalogDef *d = &out[n++]; const char *nm = js_str(cat, "name", ""); char title[96], key[48], path[SB_CAT_PATH], te[96], ie[300];
         snprintf(title, sizeof title, "%s%s%s", nm, *nm ? " · " : "", type_label(ctype)); snprintf(key, sizeof key, "a%d_%d", ai, ci);
-        addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
+        addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); { char tl[440]; snprintf(tl, sizeof tl, "/catalog/%s/%s", te, ie); addon_join(path, sizeof path, base, tl); }
         def_set(d, title, ctype, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key); }
       ci++; }
     ai++; }
@@ -185,7 +185,7 @@ int sb_disc_cats(const char *type, CatalogDef *out, char (*addon)[64], int max) 
     if (cats) cJSON_ArrayForEach(cat, cats) { char ex[200];
       if (n < max && disc_cat_ok(cat, ex, sizeof ex) && !strcmp(js_str(cat, "type", ""), type)) {
         char key[48], path[SB_CAT_PATH], te[96], ie[300]; const char *nm = js_str(cat, "name", ""), *cid = js_str(cat, "id", "");
-        snprintf(key, sizeof key, "dc%d_%d", ai, ci); addon_urlenc(type, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
+        snprintf(key, sizeof key, "dc%d_%d", ai, ci); addon_urlenc(type, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); { char tl[440]; snprintf(tl, sizeof tl, "/catalog/%s/%s", te, ie); addon_join(path, sizeof path, base, tl); }
         def_set(&out[n], *nm ? nm : cid, type, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key);
         if (addon) copy_str(addon[n], 64, js_str(js_obj(ad, "manifest"), "name", "")); n++; }
       ci++; }
@@ -237,7 +237,7 @@ int sb_disc_defs_f(CatalogDef *out, int max, const char *type, const char *genre
       if (n < max && *cid && type_ok(ct, type) && addon_cat_extra(cat, "genre", NULL, &opts, NULL) && opts && has_opt(opts, genre) && addon_cat_accepts(cat, G, 1)) {
         char ex[200] = "", title[96], key[48], path[SB_CAT_PATH], te[96], ie[300]; const char *nm = js_str(cat, "name", ""); addon_extra_add(ex, sizeof ex, "genre", genre);
         snprintf(title, sizeof title, "%s%s%s", nm, *nm ? " · " : "", type_label(ct)); snprintf(key, sizeof key, "f%d_%d", ai, ci);
-        addon_urlenc(ct, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
+        addon_urlenc(ct, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); { char tl[440]; snprintf(tl, sizeof tl, "/catalog/%s/%s", te, ie); addon_join(path, sizeof path, base, tl); }
         def_set(&out[n++], title, ct, path, ex, addon_cat_extra(cat, "skip", NULL, NULL, NULL), key); }
       ci++; }
     ai++; }
@@ -401,7 +401,7 @@ static void on_page(int st, const unsigned char *b, size_t len, void *ud) {
 }
 void sb_catalog_page(const CatalogDef *d, int skip, void (*cb)(ItemList *, int, void *), void *ud) {
   char ex[260], sk[16], url[SB_CAT_URL + 64]; copy_str(ex, sizeof ex, d->extra); snprintf(sk, sizeof sk, "%d", skip); addon_extra_add(ex, sizeof ex, "skip", sk);
-  snprintf(url, sizeof url, "%s/%s.json", d->path, ex);
+  { char tl[280]; snprintf(tl, sizeof tl, "/%s.json", ex); addon_join(url, sizeof url, d->path, tl); }
   PageReq *r = calloc(1, sizeof *r); copy_str(r->type, sizeof r->type, d->type); r->cb = cb; r->ud = ud; net_get(url, on_page, r);
 }
 /* every catalog that takes a search (and needs nothing else), in addon order */
@@ -410,7 +410,7 @@ int sb_search_defs(const char *q, CatalogDef *out, int max) {
   cJSON_ArrayForEach(ad, a) { if (!sb_addon_on(ad)) continue; const cJSON *cats = js_arr(js_obj(ad, "manifest"), "catalogs"), *cat; char base[SB_BASE_MAX]; addon_base(ad, base, sizeof base);
     if (cats) cJSON_ArrayForEach(cat, cats) { const char *ctype = js_str(cat, "type", NULL), *cid = js_str(cat, "id", NULL);
       if (!ctype || !cid || !addon_cat_accepts(cat, SN, 1) || n >= max) continue;
-      char path[SB_CAT_PATH], te[96], ie[300], ex[300] = ""; addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); snprintf(path, sizeof path, "%s/catalog/%s/%s", base, te, ie);
+      char path[SB_CAT_PATH], te[96], ie[300], ex[300] = ""; addon_urlenc(ctype, te, sizeof te); addon_urlenc(cid, ie, sizeof ie); { char tl[440]; snprintf(tl, sizeof tl, "/catalog/%s/%s", te, ie); addon_join(path, sizeof path, base, tl); }
       addon_extra_add(ex, sizeof ex, "search", q); def_set(&out[n++], js_str(cat, "name", ""), ctype, path, ex, 0, ""); } }
   return n;
 }
