@@ -106,13 +106,15 @@ static void send_playlist(Conn *c, unsigned id) {
 }
 /* ---- a file's sound converted for the TV: a local HLS stream ----
    One conversion at a time (the film playing). Its reading goes through one kept-alive range connection with a ring of
-   the last 4 MiB read (the demuxer steps back a little now and then); the library itself is loaded on the first
+   the last 16 MiB read (the demuxer steps back a little now and then); the library itself is loaded on the first
    conversion only. The playlist is the file's keyframes grouped into segments; each segment is made when the TV asks
    for it, on that request's own thread, and written through as it is made. A request arriving while another runs
    stops it (the TV moved on), then takes its place. */
-#define RING (4 << 20)
+#define RING (16 << 20)
+#define WANT_MAX (8 << 20)
 static int start(void);
-typedef struct { char url[4096]; NetRange *net; long long size; unsigned char *ring; long long start; int len; volatile int *stop; int contig; } Reader;
+static double mono_s(void);
+typedef struct { char url[4096]; NetRange *net; long long size; unsigned char *ring; long long start; int len; volatile int *stop; int contig; double rate; } Reader; /* rate: bytes a second the last request brought, its wait for the first byte included */
 static int ring_put(Reader *r, long long at, const unsigned char *b, int n) { /* appends at = start + len */
   for (int i = 0; i < n; ) { int o = (int)((at + i) % RING), k = n - i < RING - o ? n - i : RING - o; memcpy(r->ring + o, b + i, k); i += k; }
   r->len += n; if (r->len > RING) { r->start += r->len - RING; r->len = RING; } return n;
@@ -122,13 +124,18 @@ static int rd_read(void *ud, long long pos, unsigned char *buf, int n) {
   if (!(pos >= r->start && pos < r->start + r->len)) {
     long long end = r->start + r->len, at = pos;
     if (r->len && pos >= end && pos - end < (1 << 20)) at = end; else { r->start = pos; r->len = 0; } /* a short hop forward reads through */
-    int want = r->contig > 2 ? (2 << 20) : (512 << 10); /* reading on: larger requests; a seek's first look: a small one */
+    /* reading on: larger requests; a seek's first look: a small one. Each request waits for its first byte (a third
+       of a second on a debrid server), so at 2 MiB a time a 65 Mbit/s line was read at 15 to 28 Mbit/s and a 20 Mbit/s
+       film fell behind (the TV stopped to buffer every half minute): a request is as large as the line brought in the
+       last one's second, from 2 MiB up to 8 */
+    int want = r->contig > 2 ? (2 << 20) : (512 << 10);
+    if (r->contig > 2 && r->rate > want) want = r->rate > WANT_MAX ? WANT_MAX : (int)r->rate;
     for (int tries = 0;; tries++) {
       if (r->stop && *r->stop) return -1;
-      unsigned char *b = NULL; long g = 0; long long total = -1; int st = 0;
+      unsigned char *b = NULL; long g = 0; long long total = -1; int st = 0; double t0 = mono_s();
       int e = net_range_get(r->net, r->url, at, want, &b, &g, &total, &st, 15000);
       if (total > 0) r->size = total;
-      if (g > 0) { ring_put(r, at, b, (int)g); free(b); break; }
+      if (g > 0) { double dt = mono_s() - t0; r->rate = dt > 0.02 ? (double)g / dt : 0; ring_put(r, at, b, (int)g); free(b); break; }
       free(b);
       if (e == NR_OK || (r->size > 0 && at >= r->size)) return 0;
       if ((e != NR_NET && e != NR_TIMEOUT && e != NR_BUSY) || tries >= 3) { fprintf(stderr, "[dts] read at %lld failed (%d, HTTP %d)\n", at, e, st); return -1; }
