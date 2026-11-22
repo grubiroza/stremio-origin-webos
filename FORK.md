@@ -30,6 +30,18 @@ this branch are not rewritten, so links to them keep working.
 | [e085a97](https://github.com/grubiroza/stremio-origin-webos/commit/e085a973fd5ae966e7919d3baf2b1a6e70697cb3) | player: Sources has no tab for an addon that answered with nothing | [#103](https://github.com/stremio-origin/webos/issues/103) |
 | [1845297](https://github.com/grubiroza/stremio-origin-webos/commit/18452973cc94448dfd08e0fbb5c75dadb1c26ee4) | the pointer never scrolls a page, and no longer takes the highlight just before an arrow key | [#104](https://github.com/stremio-origin/webos/issues/104) |
 | [90f2fa2](https://github.com/grubiroza/stremio-origin-webos/commit/90f2fa2b6ef32f692f126773188895b916e51254) | streams sheet: the pointer held on a row opens its details, as the OK key held does | [#104](https://github.com/stremio-origin/webos/issues/104) |
+| [4e88341](https://github.com/grubiroza/stremio-origin-webos/commit/4e883413f76f05c32440503615faac394df24051) | an addon's `?query` after /manifest.json stays on every request, as the official core sends it (it was dropped) | [#107](https://github.com/stremio-origin/webos/issues/107) |
+| [4daf860](https://github.com/grubiroza/stremio-origin-webos/commit/4daf86081d0ede35941fd6da2f3d0a2aa3184f2f) | a correction to b21f173: an addon's subtitle with an address of 1024 characters or more was still left out of the list | [#30](https://github.com/stremio-origin/webos/issues/30) |
+
+### Upstream's answers so far (2026-11-22)
+
+- [#102](https://github.com/stremio-origin/webos/issues/102): fixed for the next update. A file far shorter than the one
+  the place was kept in is no longer resumed, saved or marked watched. The automatic search for the same file (0733ea9)
+  is not included.
+- [#103](https://github.com/stremio-origin/webos/issues/103): the width is fixed for the next update, and the desktop
+  app's Local Files addon is no longer asked on the TV. Other addons with no streams keep their tab.
+- [#104](https://github.com/stremio-origin/webos/issues/104): not taken, as it changes how the remote feels everywhere.
+  Both commits stay here for those who use a Magic Remote the way I do.
 
 ## Features and preferences (not reported yet; here as they are)
 
@@ -43,6 +55,13 @@ this branch are not rewritten, so links to them keep working.
 | [3857c32](https://github.com/grubiroza/stremio-origin-webos/commit/3857c32323b2ec5e4118ead955e5053db5a8a844) | streams sheet: a film's or an episode's stream in two lines, as the player's Sources lists it; held OK shows everything the addon wrote |
 | [ff3bf77](https://github.com/grubiroza/stremio-origin-webos/commit/ff3bf774f44f5cae4a0ac616d39710aed47f6526) | an episode the metadata still calls "TBA" takes its name from TMDB (with the user's key) |
 | [e908360](https://github.com/grubiroza/stremio-origin-webos/commit/e908360722746f653c3c90ab6ffc9693661314e3) | the log kept on the TV is 4 MB, not 400 KB |
+| [1aad379](https://github.com/grubiroza/stremio-origin-webos/commit/1aad379be4d09d3796ee615834b8bdc23a8d2519) | a preferred subtitle addon (Settings > Subtitles): after the file's own track, its subtitles come before the built-in list's and the other addons' |
+| [8ba4ed9](https://github.com/grubiroza/stremio-origin-webos/commit/8ba4ed97c3f7ef83ff3e86948426a898a294f4b7) | a debrid file in its service's cloud, or not there yet, is marked in the stream lists (a bolt, an hourglass) |
+
+The last two, and the `?query` fix above, came from reading
+[betterstremio/origin](https://github.com/betterstremio/origin), a fork of Stremio Origin 1.0.0 that went its own way
+(a new Home, other platforms). It has had them since its 2.1.8 and 3.0.7. They are written here for this code; the
+marks read beside a debrid file are the ones it reads.
 
 ## Local aids (not meant for upstream)
 
