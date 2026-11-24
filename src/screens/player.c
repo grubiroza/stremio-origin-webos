@@ -1850,6 +1850,7 @@ static void tray_swap_step(void) {
   mo_to(&TM.swA, 1, .18f, C_OUT, 0);
 }
 static int tray_key(int k) {
+  if (k == K_UP || k == K_DOWN || k == K_LEFT || k == K_RIGHT) HF.kind = 0; /* domar: a key moves the focus: what the pointer put it on no longer holds the list (back on it with the keys, the list did not follow) */
   if (P.tray.onBtn) { if (k == K_OK) close_tray(); else if (k == K_UP) P.tray.onBtn = 0; else if (k == K_LEFT || k == K_RIGHT) { close_tray(); P.bIdx = k == K_RIGHT ? (P.bIdx + 1 < P.nbtn ? P.bIdx + 1 : P.bIdx) : (P.bIdx > 0 ? P.bIdx - 1 : 0); } else if (k == K_BACK) close_tray(); return 1; }
   if (src_tray()) { /* the sources: Left / Right go from tab to tab wherever the focus is; Up from the first stream reaches the tabs */
     if (k == K_LEFT || k == K_RIGHT) { int to = P.tray.tab + (k == K_RIGHT ? 1 : -1); if (to >= 0 && to < P.tray.ntabs) { tray_tab(to); SR.moved = 0; } else nudge_start(&P.nudge, k); return 1; }
