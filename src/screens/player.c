@@ -420,8 +420,12 @@ static int wrong_file(void) {
   P.wrong = 1; fprintf(stderr, "[player] not the film this place was kept in (%.0f s long, that one %.0f s, the place at %.0f s): nothing kept or marked\n", dn, d, to);
   { char k[SB_ID + SB_VID + 2]; snprintf(k, sizeof k, "%s_%s", P.id, P.vid); /* once for a title: the same file asked for again, by the next frame */
     if (strcmp(RF.tried, k) && P.st.addon[0] && !P.isP2p && !P.closing) { snprintf(RF.tried, sizeof RF.tried, "%s", k); RF.want = 1; return 1; } }
+  sb_forget_stream(P.id, P.vid); /* (asked for again and still not the film, or not to be asked for: no longer remembered, so the next time it is the title's list and not this again) */
   toast(T("This link no longer plays the film. Your place is kept: pick a source again"), 9000, NULL); return 1;
 }
+/* domar: Trakt hears of this film only: what plays when it is not (wrong_file) is never told, its end neither (at 0 %
+   nothing is sent and the item is let go). Trakt marked the episode watched when the notice clip ran to its end */
+static void trakt_end(int ended) { if (wrong_file()) scrobble_player_end(0, dur(), 0); else scrobble_player_end(video_time(), dur(), ended); }
 static void save_progress(int push) { double d = dur(); if (!P.id[0] || P.isTrailer || d <= 0 || live_title() || getenv("SB_PLAY_NOSAVE")) return; if (wrong_file()) return; /* (a live broadcast: no place in Continue Watching, nothing to resume) */ /* (SB_PLAY_NOSAVE: development plays leave the library alone) */
   ep_decide(); if (P.epState != 1) return; /* an earlier episode not watched long enough yet, or a special: the series keeps its place */
   int ep = episodic() && P.next.has && P.next.vid[0];
@@ -1438,7 +1442,7 @@ static int rf_rank(const Stream *s) { const Stream *w = &RF.was; int same = !str
   return 0; }
 static void rf_finish(void) {
   if (!RF.tok) return; RF.tok = 0;
-  if (RF.rank) { Stream b = RF.best; fprintf(stderr, "[player] the same file again from %s (match %d): %s\n", b.addon, RF.rank, b.filename[0] ? b.filename : "(no file name)"); play_stream(&b, P.vid, RF.startAt); return; }
+  if (RF.rank) { Stream b = RF.best; fprintf(stderr, "[player] the same file again from %s (match %d)\n", b.addon, RF.rank); play_stream(&b, P.vid, RF.startAt); return; } /* (never the file's name in the log: a shared log does not say what was watched, subs.c) */
   fprintf(stderr, "[player] the same file is not offered any more (%s): the title's list, the place kept\n", RF.was.addon);
   toast(T("This link no longer plays the film and the same file is not offered. Your place is kept: pick a source"), 9000, NULL);
   sb_forget_stream(P.id, P.vid); /* (no "Resume last stream" at the top of that list: it would play the notice again) */
@@ -1455,7 +1459,7 @@ static void rf_begin(void) {
   RF.want = 0; if (!P.open || P.closing || P.wrong <= 0) return;
   RF.was = P.st; RF.startAt = P.startAt; RF.rank = 0; char vid[SB_VID]; snprintf(vid, sizeof vid, "%s", P.vid);
   char names[16][96]; int n = sb_stream_addons(P.type, vid, names, 16), which = -1; for (int i = 0; i < n; i++) if (!strcmp(names[i], RF.was.addon)) { which = i; break; }
-  fprintf(stderr, "[player] asking %s for the same file again (%s)\n", which >= 0 ? RF.was.addon : "every addon", RF.was.filename[0] ? RF.was.filename : "no file name kept");
+  fprintf(stderr, "[player] asking %s for the same file again (%s)\n", which >= 0 ? RF.was.addon : "every addon", RF.was.filename[0] ? "its file name kept" : "no file name kept");
   prepare(vid, RF.startAt, 1); set_status(T("This link has expired. Asking for the same file again\xe2\x80\xa6"));
   RF.tok = ++nxTok; if (!RF.tok) RF.tok = ++nxTok; RF.until = now_() + 50;
   if (which >= 0) sb_streams_one(P.type, vid, which, rf_part, rf_done, (void *)(uintptr_t)RF.tok); else sb_streams(P.type, vid, rf_part, rf_done, (void *)(uintptr_t)RF.tok);
@@ -2349,7 +2353,7 @@ static void finish_close(void) { if (hub_on() && hub_player_mode()) hub_close();
 static int closeNext, closeSim, closeArt; static double closeAt, closeT0; /* closeArt: closed on the loading screen (its line and words fade as the logo flies back) */
 static void close_player(int goNext, int goSim) {
   if (!P.open || P.closing) return; if (bestTok) { best_choose_cancel(bestTok); bestTok = 0; } P.closing = 1; ps_hold(0); sp_verify_reset(); np_stop(); NP.vid[0] = 0; /* (the next episode's pictures made so far: kept) */ /* (a lighter copy not taken yet: it reads on freely, nothing plays) */ closeArt = !P.live && P.artA.v > 0.999f; closeT0 = now_(); sx_begin_quick(0); /* the player's logo moves back to the page */ closeNext = goNext; closeSim = goSim; P.ssOn = 0; P.nx.tok = 0; P.sk.tok = 0; RF.tok = 0; RF.want = 0;
-  scrobble_player_end(video_time(), dur(), 0); save_progress(1); video_pause(); /* (Test playback: nothing told, nothing kept) */
+  trakt_end(0); save_progress(1); video_pause(); /* (Test playback: nothing told, nothing kept) */
   /* the title's own picture fades back over the paused frame, the video goes, then the cover fades onto the app */
   closeAt = now_() + (closeArt ? 0.01 : 0.26); /* the cover fades back over the paused frame (see css()); from the loading screen the art fades at once, under the logo on its way back */
 }
@@ -2561,8 +2565,8 @@ void player_tick(float dt) {
   close_step(); if (P.closing) return;
   if (P.resolving) { const char *st = p2p_status(); if (strcmp(st, status)) set_status(st); return; } /* the art: nothing for a few seconds, then why it is slow ("Finding peers…", "Getting the file list…") */
   VidState vs = video_state();
-  /* Trakt: what plays, every frame (it decides when to tell; trailers and live broadcasts never) */
-  if (!P.isTrailer && !live_bcast()) { int ep = episodic(); ScrobbleItem si = { P.type, P.id, P.name, P.year, ep ? P.season : -1, ep ? P.episode : -1 };
+  /* Trakt: what plays, every frame (it decides when to tell; trailers and live broadcasts never; domar: nor what is not this film, trakt_end) */
+  if (!P.isTrailer && !live_bcast() && !wrong_file()) { int ep = episodic(); ScrobbleItem si = { P.type, P.id, P.name, P.year, ep ? P.season : -1, ep ? P.episode : -1 };
     scrobble_player(&si, vs == VID_PLAYING && video_live() ? 1 : paused() ? 2 : 0, video_time(), dur()); }
   if (P.started && mkv && !P.isTrailer && !P.isP2p && !sp_active()) { static double spAt; if (now_() - spAt > 0.1) { spAt = now_(); double t0 = video_time(), b0 = video_buffered_end(); char sk[300]; snprintf(sk, sizeof sk, "%s|%s|%.0f|%.0f", P.id, P.vid, P.size, dur()); sp_player_tick(prev_src_pick(), sk, 0, live_bcast() || !strcmp(P.type, "tv") || !strcmp(P.type, "channel"), t0, dur(), b0 > t0 ? b0 - t0 : -1, (vs == VID_BUFFERING || vs == VID_LOADING) && !P.pw.on, paused() || P.pw.on); } } /* (seek previews not started yet: asked ten times a second, so they start the moment the index is in) */
   { static double last = -9; static int was; double d = dur(); double f = P.seekT >= 0 ? P.seekT : P.hvOn && d > 0 ? P.hvP * d : -1; int on = f >= 0; /* the remote's scrub, or the pointer over the bar: its pictures first (told as it moves) */
@@ -2630,7 +2634,7 @@ void player_tick(float dt) {
     if (vs == VID_PLAYING && at_credits() && !P.marked) { mark_watched(); save_progress(1); } /* the credits: watched, everywhere, at once */
     if (vs == VID_PLAYING && now_() - P.lastSave >= 10) save_progress(0);
     if (vs == VID_ENDED && !P.ended && live_reload("the stream ended")) vs = video_state();
-    if (vs == VID_ENDED && !P.ended) { P.ended = 1; scrobble_player_end(video_time(), dur(), 1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has && !wrong_file()) P.endGoAt = now_() + 0.6; else if (!RF.want) close_player(0, 0); }
+    if (vs == VID_ENDED && !P.ended) { P.ended = 1; trakt_end(1); save_progress(1); mark_watched(); if (strcmp(store_get("bingeWatch", "true"), "false") && strcmp(store_get("enableNextVideo", "true"), "false") && P.next.has && !wrong_file()) P.endGoAt = now_() + 0.6; else if (!RF.want) close_player(0, 0); }
     if (P.endGoAt && now_() >= P.endGoAt) { P.endGoAt = 0; go_next(); if (!P.open || P.closing) return; }
     check_prompt();
     if (P.prompt.autoN && (P.prompt.k == 1 || P.prompt.k == 2) && now_() - P.prompt.t0 >= P.prompt.adur && !paused()) prompt_go(0);
