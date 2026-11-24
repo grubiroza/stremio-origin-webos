@@ -509,10 +509,10 @@ int net_range_multi(NetRange *h, const char *url, const long long *st, const lon
     f_easy_setopt(c, CURLOPT_USERAGENT, "Mozilla/5.0 (Web0S; Linux) StremioOrigin"); f_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L); if (caPath[0]) f_easy_setopt(c, CURLOPT_CAINFO, caPath);
     CURLcode rc = f_easy_perform(c); if (pin) { f_easy_setopt(c, CURLOPT_RESOLVE, (struct curl_slist *)NULL); f_slist_free_all(pin); }
     if (httpStatus) *httpStatus = m.status;
+    if (rc == CURLE_WRITE_ERROR && m.status == 206 && m.plain) { free(m.buf); free(rg); return NR_NORANGE; } /* domar: several ranges asked, one plain part answered: this server takes one range at a time. It was counted as a failed read (NR_NET), and five of those switched the seek previews off for the film. Asked straight where the link led, too: that place answers (it was dropped for every reader, and asked again through the link) */
     if (direct && !pass && (rc != CURLE_OK || (m.status >= 400 && m.status != 416 && m.status != 429))) { free(m.buf); led_drop(url); free(h->eff); h->eff = NULL; direct = 0; continue; } /* (where the link led stopped answering: through the link again) */
     if (m.status == 429 || m.status == 503) { free(m.buf); free(rg); return NR_BUSY; }
     if (rc == CURLE_OPERATION_TIMEDOUT) { free(m.buf); free(rg); return NR_TIMEOUT; }
-    if (rc == CURLE_WRITE_ERROR && m.status == 206 && m.plain) { free(m.buf); free(rg); return NR_NORANGE; } /* domar: several ranges asked, one plain part answered: this server takes one range at a time. It was counted as a failed read (NR_NET), and five of those switched the seek previews off for the film */
     if (rc != CURLE_OK && !(rc == CURLE_WRITE_ERROR && m.status != 206)) { free(m.buf); free(rg); return NR_NET; }
     const char *bd = strcasestr(m.ctype, "boundary="); if (m.status != 206 || !strcasestr(m.ctype, "multipart/byteranges") || !bd) { free(m.buf); free(rg); return m.status == 206 || m.status == 200 || m.status == 400 || m.status == 416 || m.status == 501 ? NR_NORANGE : m.status >= 400 ? NR_HTTP : NR_NET; }
     char sep[96]; bd += 9; if (*bd == '"') bd++; size_t bl = strcspn(bd, "\";\r\n "); if (bl > 80) bl = 80; snprintf(sep, sizeof sep, "--%.*s", (int)bl, bd);
