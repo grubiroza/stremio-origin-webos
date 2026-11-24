@@ -1007,7 +1007,9 @@ static void dts_conv_tick(void) {
   if (P.dts.conv == 2 && P.dts.dv && !P.dts.dvSeen) { /* the converted picture: Dolby Vision on screen, or HDR10 all the same (then not converted again here) */
     if (video_state() == VID_PLAYING && video_live()) { if (!P.dts.dvAt) P.dts.dvAt = now_();
       else if (now_() - P.dts.dvAt >= 3) { char h[32]; if (video_hdr(h, sizeof h)) { P.dts.dvSeen = 1; int yes = strcasestr(h, "dolby") != NULL;
-          fprintf(stderr, "[dv] the TV shows the converted picture as %s\n", h); if (yes || strcasestr(h, "hdr") || P.dts.dv == 5) best_learn(dv_key(P.dts.dv), yes); } /* (profile 5 shown as anything else, "none" too: converting it brings nothing here) */
+          fprintf(stderr, "[dv] the TV shows the converted picture as %s\n", h);
+          if (!yes && P.dts.dv == 5 && best_learned("dv5Hls") == 1) fprintf(stderr, "[dv] profile 5 has shown as Dolby Vision here before: this file's trouble, the lesson kept\n"); /* domar: one odd file (its metadata, the TV's first word) turned the lesson off for good, and every profile 5 film after it played washed out and green, as when nothing converted it */
+          else if (yes || strcasestr(h, "hdr") || P.dts.dv == 5) best_learn(dv_key(P.dts.dv), yes); } /* (profile 5 shown as anything else, "none" too: converting it brings nothing here) */
         else if (now_() - P.dts.dvAt >= 15) P.dts.dvSeen = 1; } } /* (this TV doesn't say) */
     else P.dts.dvAt = 0; }
 }
