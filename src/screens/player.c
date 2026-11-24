@@ -3363,13 +3363,15 @@ static void ptr_tray(float x, float y, int down) { HV.hit = 0; ptr_tray_in(x, y,
 /* domar (#95): the focused button is a pill, its name beside the icon, and all of the pill takes the pointer. The icon
    alone did: a click on the name found no button and fell through to the picture (play / pause). In the right group
    the pill grows to the left (the button itself slides by -lw, the name ends where the icon stood); in the left group
-   to the right (the buttons after it slide by +lw). Taken from the sliding values, so it follows the pill as it moves.
-   The last button of the left group stays as it was: nothing beside it tells where its pill ends, and a miss there is
-   only play / pause */
+   to the right (the buttons after it slide by +lw). Taken from the sliding values, so it follows the pill as it moves,
+   and while they slide it reaches only to the next icon: the gap opened between this button and the next (as
+   betterstremio/origin 4d11eae has it; with the focus moved mid-slide a click could take the next button). The last
+   button of the left group has nothing sliding after it: there the lit plate's own edge (focX + focW) says where its
+   pill ends. It took only its icon, and a click on its name ("Play from the beginning") paused the film */
 static float btn_ptr_w(int i) {
   float w = P.btns[i].w; if (i != P.bIdx) return w;
-  if (i >= P.nL) return w - P.btns[i].dx.v;
-  return i + 1 < P.nL ? w + P.btns[i + 1].dx.v : w;
+  if (i == P.nL - 1) { float e = P.focX.v + P.focW.v - P.btns[i].x; return e > w ? e : w; }
+  float nx = i + 1 < P.nbtn ? P.btns[i + 1].dx.v : 0; return w + fmaxf(0, nx - P.btns[i].dx.v);
 }
 void player_ptr(int type, float x, float y) {
   if (!P.open || P.closing || !P.live) return; /* the art is up (resolving): nothing to point at */
