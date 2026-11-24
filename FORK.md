@@ -14,17 +14,17 @@ this branch are not rewritten, so links to them keep working.
 
 | Commit | What | Report |
 |---|---|---|
-| [c9db9c8](https://github.com/grubiroza/stremio-origin-webos/commit/c9db9c85e3032f11b21b3ba1aa896954cf76228a) | webOS 4.x: the Magic Remote pointer never came back after the app hid it | [#89](https://github.com/stremio-origin/webos/issues/89) |
+| [c9db9c8](https://github.com/grubiroza/stremio-origin-webos/commit/c9db9c85e3032f11b21b3ba1aa896954cf76228a) | webOS 4.x: the Magic Remote pointer never came back after the app hid it (the call is left out on every webOS: on 5 and later, where it works, the app no longer hides the TV's cursor itself) | [#89](https://github.com/stremio-origin/webos/issues/89) |
 | [60d3abe](https://github.com/grubiroza/stremio-origin-webos/commit/60d3abe65313f6b85d9c3e56af842b9b1be5876b) | webOS 4.x: the TV's screen-saver request has no `state` and was dropped | [#90](https://github.com/stremio-origin/webos/issues/90) |
 | [a1db198](https://github.com/grubiroza/stremio-origin-webos/commit/a1db198f589e212b30553f46d1e4b64ae0e303df) | the screen-saver request is registered from the start, not from the first film | [#90](https://github.com/stremio-origin/webos/issues/90) |
-| [1a83c9b](https://github.com/grubiroza/stremio-origin-webos/commit/1a83c9b92167cf5904cf65b641e5aedb0bef97ae) | a paused film is told to the TV (ACB), so the TV's screen saver covers the whole screen and not only a frame around the picture; over a paused film and the menus the TV's own comes after the app's | [#90](https://github.com/stremio-origin/webos/issues/90) |
-| [8d356b5](https://github.com/grubiroza/stremio-origin-webos/commit/8d356b5ea9bf04f57cb7ce5343295d4594c4b383) | the pointer during playback as in 1.0.0; a click on a focused button's name no longer pauses | [#95](https://github.com/stremio-origin/webos/issues/95) |
+| [1a83c9b](https://github.com/grubiroza/stremio-origin-webos/commit/1a83c9b92167cf5904cf65b641e5aedb0bef97ae) | a paused film is told to the TV (ACB), so the TV's screen saver covers the whole screen and not only a frame around the picture; over a paused film and the menus the TV's own comes at its own time (about two minutes without a key), after the app's own when that is set to one minute in Settings | [#90](https://github.com/stremio-origin/webos/issues/90) |
+| [8d356b5](https://github.com/grubiroza/stremio-origin-webos/commit/8d356b5ea9bf04f57cb7ce5343295d4594c4b383) | the pointer during playback as in 1.0.0; a click on a focused button's name no longer pauses (the left group's last button: fe8f436, below) | [#95](https://github.com/stremio-origin/webos/issues/95) |
 | [638e5cb](https://github.com/grubiroza/stremio-origin-webos/commit/638e5cbe59d14edb95c75a2cb29fb3a447e199e5) | player menus: what the pointer is over is shown, and the list no longer moves under it | [#95](https://github.com/stremio-origin/webos/issues/95) |
 | [eb3e830](https://github.com/grubiroza/stremio-origin-webos/commit/eb3e8307b33ce74674d968abbe83d9ced94a3648) | player: the subtitle style cards take the pointer (a value, Done, beside the card) | [#95](https://github.com/stremio-origin/webos/issues/95) |
 | [feef8c6](https://github.com/grubiroza/stremio-origin-webos/commit/feef8c695fd0e585a57694909e373d8715c8aa31) | seek previews with a server that answers several ranges with one plain part (Real-Debrid): no previews at all before | [#81](https://github.com/stremio-origin/webos/issues/81) |
 | [0e1c537](https://github.com/grubiroza/stremio-origin-webos/commit/0e1c537147a23bf18fccd6d3256ec77d542484c3) | an addon's address is no longer cut at 511 characters (Comet: "obsolete configuration") | [#30](https://github.com/stremio-origin/webos/issues/30) |
 | [b21f173](https://github.com/grubiroza/stremio-origin-webos/commit/b21f17371a8ce4b370ed4812f7740326edfa3482) | the same for catalogs and for a subtitle's own address | [#30](https://github.com/stremio-origin/webos/issues/30) |
-| [9a717d2](https://github.com/grubiroza/stremio-origin-webos/commit/9a717d2c9bfbe8a53f8f9f469ee982821ebb236a) | a remembered link that now plays something else (a debrid notice clip) no longer marks the episode watched and loses its place | [#102](https://github.com/stremio-origin/webos/issues/102) |
+| [9a717d2](https://github.com/grubiroza/stremio-origin-webos/commit/9a717d2c9bfbe8a53f8f9f469ee982821ebb236a) | a remembered link that now plays something else (a debrid notice clip) no longer marks the episode watched and loses its place (on Trakt too since 09d41b1, below) | [#102](https://github.com/stremio-origin/webos/issues/102) |
 | [0733ea9](https://github.com/grubiroza/stremio-origin-webos/commit/0733ea972004ac12706003b045a42fb5a3010266) | ... and the same file is asked for again by itself and played from the kept place | [#102](https://github.com/stremio-origin/webos/issues/102) |
 | [2f844e2](https://github.com/grubiroza/stremio-origin-webos/commit/2f844e22e27cb62b4f1ac1120cf07089009c5535) | player: Sources is never wider than the screen (with several addons its list could not be seen) | [#103](https://github.com/stremio-origin/webos/issues/103) |
 | [e085a97](https://github.com/grubiroza/stremio-origin-webos/commit/e085a973fd5ae966e7919d3baf2b1a6e70697cb3) | player: Sources has no tab for an addon that answered with nothing | [#103](https://github.com/stremio-origin/webos/issues/103) |
@@ -32,7 +32,7 @@ this branch are not rewritten, so links to them keep working.
 | [90f2fa2](https://github.com/grubiroza/stremio-origin-webos/commit/90f2fa2b6ef32f692f126773188895b916e51254) | streams sheet: the pointer held on a row opens its details, as the OK key held does | [#104](https://github.com/stremio-origin/webos/issues/104) |
 | [4e88341](https://github.com/grubiroza/stremio-origin-webos/commit/4e883413f76f05c32440503615faac394df24051) | an addon's `?query` after /manifest.json stays on every request, as the official core sends it (it was dropped) | [#107](https://github.com/stremio-origin/webos/issues/107) |
 | [4daf860](https://github.com/grubiroza/stremio-origin-webos/commit/4daf86081d0ede35941fd6da2f3d0a2aa3184f2f) | a correction to b21f173: an addon's subtitle with an address of 1024 characters or more was still left out of the list | [#30](https://github.com/stremio-origin/webos/issues/30) |
-| [bc5b785](https://github.com/grubiroza/stremio-origin-webos/commit/bc5b78531c3e5a0adc79de6788126bf1a80f0246) | webOS 3 / 4: an HDR10 film's own mastering values and colour description are passed on to the TV (they went blank); a switch in Settings > Playback | another user's [#106](https://github.com/stremio-origin/webos/issues/106), fixed upstream for the next update |
+| [bc5b785](https://github.com/grubiroza/stremio-origin-webos/commit/bc5b78531c3e5a0adc79de6788126bf1a80f0246) | webOS 3 / 4: an HDR10 film's own mastering values and colour description are passed on to the TV (they went blank); a switch in Settings > Playback (shown on any TV with HDR; it does something on webOS 3 / 4 only) | another user's [#106](https://github.com/stremio-origin/webos/issues/106), fixed upstream for the next update |
 | [446e2d8](https://github.com/grubiroza/stremio-origin-webos/commit/446e2d87cb66d0ac70e0b6f59b488c666973ee00) | Dolby Vision profile 5 in a Matroska file (web copies with no HDR10 base: washed out and green as the TV plays them) goes through the local stream and shows as Dolby Vision; it has a lesson of its own, so a TV that once showed HDR10 for a profile 7 or 8 picture still converts it | [#109](https://github.com/stremio-origin/webos/issues/109) (related: [#2](https://github.com/stremio-origin/webos/issues/2)) |
 | [3d8e89a](https://github.com/grubiroza/stremio-origin-webos/commit/3d8e89ac6dd1c765f59a447d55915f543a0ba0f6) | the converted stream reads its file in requests of up to 8 MiB (2 MiB before): a 20 Mbit/s film was made at about its own speed and the TV stopped to buffer | [#110](https://github.com/stremio-origin/webos/issues/110) |
 
@@ -68,12 +68,30 @@ The last two, and the `?query` fix above, came from reading
 (a new Home, other platforms). It has had them since its 2.1.8 and 3.0.7. They are written here for this code; the
 marks read beside a debrid file are the ones it reads.
 
+## Corrections after a review (2026-11-24)
+
+The changes above were read again by two independent reviewers. Each finding was checked on the code first, and on
+the TV where it could be shown; these commits correct the ones that held. Findings that did not hold, or that are
+upstream's own design, are not listed. The commit each one corrects is in the last column.
+
+| Commit | What | Corrects |
+|---|---|---|
+| [bd46130](https://github.com/grubiroza/stremio-origin-webos/commit/bd461307003acd29efa6c3c5f71e4100b2efa8ee) | streams sheet: the press that opened a row's details no longer puts them away when it is let go beside a panel narrower than the row; a row pressed before the highlight reached it opens its own details | 90f2fa2 |
+| [09d41b1](https://github.com/grubiroza/stremio-origin-webos/commit/09d41b113c4c0fd93defd9392b9614373f8c50ab) | a remembered link that plays something else: Trakt is told nothing of it (the notice clip played to its end was scrobbled as watched); found so again, the link is forgotten; the file's name stays out of the log | 9a717d2, 0733ea9 |
+| [8a599fd](https://github.com/grubiroza/stremio-origin-webos/commit/8a599fd9fef931c1450442a3816299812fe74595) | subtitles: a file kept from the built-in list waits for that list, not only for the addons' (an addon's file was put on first; upstream's own wait for a show, which a786233 uses for films too); the second language waits for one retry of a failing list, not all three | a786233, 83ff21c |
+| [fe8f436](https://github.com/grubiroza/stremio-origin-webos/commit/fe8f4364d01ed47043ebd10ace1b52ac268cf167) | player: a click on the name of the left group's last button ("Play from the beginning") takes that button; while the buttons slide, a pill stops at the next icon (from betterstremio/origin 4d11eae) | 8d356b5 |
+| [a8da46c](https://github.com/grubiroza/stremio-origin-webos/commit/a8da46c89a2f76085a302358eb626266c2cfbb00) | player: Back from the delay card its own button opened puts it away (it opened Subtitles); a full row of buttons takes no more | a6516f3 |
+| [0c93d2d](https://github.com/grubiroza/stremio-origin-webos/commit/0c93d2d2f66d48efd5ef3ba847837a1626bcb5fd) | player menus: a key that moves the focus ends the pointer's hold on the list | 638e5cb |
+| [8211006](https://github.com/grubiroza/stremio-origin-webos/commit/8211006037fa63bc01182bc88acb025b4b017a99) | player: the subtitle size card slides with the pointer too (it stayed among the seven sizes shown first) | 3da1c7e, eb3e830 |
+| [ecefb51](https://github.com/grubiroza/stremio-origin-webos/commit/ecefb51f73842cc8feb7c9d5035ccc548fb26af9) | Dolby Vision profile 5: one file shown otherwise no longer turns a learned "yes" off for good | 446e2d8 |
+| [b3e359d](https://github.com/grubiroza/stremio-origin-webos/commit/b3e359daa54889662309d0e828cc0cb56c13c070) | seek previews: a plain part from where the link led is one range at a time there too; that place is no longer dropped for every reader | feef8c6 |
+
 ## Local aids (not meant for upstream)
 
 | Commit | What |
 |---|---|
 | [2548fb5](https://github.com/grubiroza/stremio-origin-webos/commit/2548fb554f956f3b368020e479fe5c6d315568a1) | with a file `update.pin` in the app's data folder, Install in Settings > About installs nothing (a patched build would lose its changes); without the file nothing changes |
-| [ef556e5](https://github.com/grubiroza/stremio-origin-webos/commit/ef556e50ea0c376a1a136e082bcc70328f039c45) | pointer commands read from a file `dev.cmd` in the data folder, to try pointer changes without a hand on the remote; without the file nothing happens |
+| [ef556e5](https://github.com/grubiroza/stremio-origin-webos/commit/ef556e50ea0c376a1a136e082bcc70328f039c45) | pointer commands read from a file `dev.cmd` in the data folder, to try pointer changes without a hand on the remote; without the file nothing happens (the app only looks for it, four times a second) |
 
 ## How it was tried
 
