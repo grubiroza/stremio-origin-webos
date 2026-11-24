@@ -124,6 +124,7 @@ static struct {
   struct { ParGuide g; int age, certAge, guideIn, certIn, asked; unsigned sess; double at, askAt; char cert[24], desc[120]; } pg; /* the viewer notice: an age and what for, as the picture comes, gone in 5 s */
   Mo posA; double posAt; int styK; /* the subtitle style card (mode 5): its showing, when the value last changed, which one (0 position, 1 size, 2 colour, 3 background, 4 brightness) */
   Mo dlyA, dlyR; int dlyF; double dlyAt; /* the delay card (mode 4): its showing, its focus ring's place, the focused button, when the value last changed */
+  int dlyRow; /* domar: the delay card was opened by its own button in the row (Back puts it away), not from Subtitles > Style / Delay */
   double hideAt; int osd;
   /* the info chips: kept per place, each with its own entrance */
   struct { char t[100], old[100]; const char *icon; int bold, sep; double at, xAt; float delay, oldW; } chip[8]; int nchip; /* old, xAt, oldW: the words before a change, crossfading */
@@ -1200,7 +1201,7 @@ void player_chapters(const char *url, const PlayerChapter *list, int n) {
 static void build_btns(void) {
   const char *fid = P.nbtn && P.bIdx < P.nbtn ? P.btns[P.bIdx].id : NULL; /* the focus stays on the same button when the row changes */
   P.nbtn = 0; int i = 0;
-  #define B(ID, IC, LB, BIG) do { P.btns[i].id = ID; P.btns[i].icon = IC; snprintf(P.btns[i].lb, 48, "%s", LB); P.btns[i].big = BIG; P.btns[i].nx = 0; i++; } while (0)
+  #define B(ID, IC, LB, BIG) do { if (i >= MAXBTN) { fprintf(stderr, "[player] no room in the row for %s (%d buttons)\n", ID, MAXBTN); break; } /* (domar: the row is full with 9: one more, from a new version, is left out instead of written past its end) */ P.btns[i].id = ID; P.btns[i].icon = IC; snprintf(P.btns[i].lb, 48, "%s", LB); P.btns[i].big = BIG; P.btns[i].nx = 0; i++; } while (0)
   if (live_title() && live_catalogs() > 0) B("chn", "wn_live", T("Channels"), 1); else B("pp", "p_pause", "", 1); /* a channel: its big button is the channels (play / pause on the remote's key) */
   if (!P.isTrailer && P.next.has) { B("nxt", "p_next", T("Next episode"), 0); P.btns[i - 1].nx = 1; }
   if (!P.isTrailer && !live_title()) { B("beg", "restart", T("Play from the beginning"), 0); P.btns[i - 1].nx = 1; } /* films and episodes alike (a broadcast has no beginning) */
@@ -1892,7 +1893,7 @@ static void live_card_draw(void);
    second each), the delay between them, play / pause and Done; the picture and the lines stay in view, so a change is
    seen at once. Back or Done closes it (mode 4) ---- */
 #define DLY_STEP 0.25
-static void dly_card(void) { P.osd = 0; P.mode = 4; P.dlyF = 0; mo_set(&P.dlyR, 0); mo_to(&P.dlyA, 1, .28f, C_OUT, 0); }
+static void dly_card(void) { P.osd = 0; P.mode = 4; P.dlyF = 0; P.dlyRow = 0; mo_set(&P.dlyR, 0); mo_to(&P.dlyA, 1, .28f, C_OUT, 0); }
 static void dly_open(void) { close_tray(); dly_card(); }
 static void dly_close(void) { P.mode = 0; mo_to(&P.dlyA, 0, .2f, C_EASE, 0); }
 static void dly_change(double d) { double v = P.subDelay + d; v = floor(v / DLY_STEP + 0.5) * DLY_STEP; if (v > 120) v = 120; if (v < -120) v = -120; P.subDelay = fabs(v) < 1e-6 ? 0 : v; P.dlyAt = now_(); }
@@ -1935,14 +1936,14 @@ static void hub_from_player(void) { close_tray(); P.osd = 0; P.mode = 6; hub_ope
 static void act(const char *id) {
   if (!strcmp(id, "pp")) toggle(); else if (!strcmp(id, "beg")) from_start(); else if (!strcmp(id, "asp")) next_aspect(); else if (!strcmp(id, "nxt")) next_auto(); else if (!strcmp(id, "cc")) cc_toggle();
   else if (!strcmp(id, "chn")) { hub_from_player(); return; }
-  else if (!strcmp(id, "dly")) { dly_card(); return; } /* domar: the row's own button. Not dly_open(): its close_tray() turns tray.kind over, and a menu still closing would open again */
+  else if (!strcmp(id, "dly")) { dly_card(); P.dlyRow = 1; return; } /* domar: the row's own button. Not dly_open(): its close_tray() turns tray.kind over, and a menu still closing would open again */
   else open_tray(!strcmp(id, "eps") ? 1 : !strcmp(id, "src") ? 2 : !strcmp(id, "aud") ? 3 : 4);
   arm_hide();
 }
 static void back(void) {
   if (P.closing) return;
   if (P.mode == 2) { tray_back(); return; }
-  if (P.mode == 4) { dly_close(); if (!P.isTrailer) { subTab = (P.nSubAddons > 0 || P.nAdx > 0) ? 2 : 1; open_tray(4); P.tray.zone = 2; P.tray.c = 1; TCol *c = &P.tray.cols[1]; for (int i = 0; i < c->n; i++) if (!strcmp(c->items[i].u, "dlyopen")) P.tray.r[1] = i; } return; } /* Back: the tray again, on Adjust */
+  if (P.mode == 4) { int row = P.dlyRow; dly_close(); if (row) return; /* domar: opened by its own button: Back puts it away, as Done does (it opened Subtitles, a menu never asked for) */ if (!P.isTrailer) { subTab = (P.nSubAddons > 0 || P.nAdx > 0) ? 2 : 1; open_tray(4); P.tray.zone = 2; P.tray.c = 1; TCol *c = &P.tray.cols[1]; for (int i = 0; i < c->n; i++) if (!strcmp(c->items[i].u, "dlyopen")) P.tray.r[1] = i; } return; } /* Back: the tray again, on Adjust */
   if (P.mode == 5) { int k = P.styK; pos_close(); if (!P.isTrailer) style_back(k); return; } /* Back: the tray again, on that style */
   if (P.mode == 6) { if (!hub_back()) { hub_close(); P.mode = 0; } return; }
   if (P.adopt && adoptFull && !P.failed && lpk_can_return(P.id) && (P.mode == 0 || P.mode == 1)) { hide_osd(); if (lpk_take_back(P.id)) { fprintf(stderr, "[player] back to All channels, the channel playing on behind it\n"); keepVideo = 1; adoptFull = 0; finish_close(); } else close_player(0, 0); return; } /* taken full screen from behind All channels: back there, playing on */
