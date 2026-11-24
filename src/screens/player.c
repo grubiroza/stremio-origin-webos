@@ -637,6 +637,10 @@ static void show_pref_aud(const char *lang, const char *name) {
   fprintf(stderr, "[audio] %s for this show\n", asSettings ? "as the settings say" : "kept");
 }
 static const char *aud_want(void) { const char *al = js_str(show_pref(), "al", NULL); if (al && *al) return al; return aud_setting(); }
+/* domar: a subtitle list the second language still waits for: its first try, and the one more try 15 s after that one
+   failed. A list that failed twice is asked again 30 and 45 s later, and the second language waited all of that out
+   (two minutes with no subtitles when a source was down) */
+static int list_coming(int loading, int tries, double retryAt) { return loading && (tries == 0 || (tries == 1 && !retryAt)); }
 static void auto_sub(void) {
   if (P.autoSubDone || strcmp(P.curSub, "off")) return;
   const cJSON *sp = sub_pref(); const char *pk = js_str(sp, "sk", ""), *pn = js_str(sp, "sn", ""), *pu = js_str(sp, "sub", "");
@@ -647,7 +651,8 @@ static void auto_sub(void) {
     if (*pu) for (int any = 0; any < 2; any++) { /* domar: the very file picked last time, when it is in the lists (another episode: it is not, and the addon is what counts). From the source it was picked from when that one lists it: the built-in list and an addon can carry the same file, and its tick sat under whichever answered first */
       for (int i = 0; i < P.nAdx; i++) if (!strcmp(P.adx[i].url, pu) && (any || !strcmp(P.adx[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; }
       for (int i = 0; i < P.nExt; i++) if (!strcmp(P.ext[i].url, pu) && (any || !strcmp(P.ext[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(1, &P.ext[i]); sync_auto_arm(); return; } }
-    for (int pass = 0; pass < 2; pass++) { if (pass && (*pn ? P.adxLoading : P.extLoading) && !P.sameWaitOver) { if (!P.sameWaitAt) P.sameWaitAt = now_() + 10; return; } /* (any addon's file in that language only once the list that may hold the same addon's is in, or 10 s on) */
+    int fromB = !*pn || !strcmp(pn, "OpenSubtitles"); /* domar: the built-in list's files are kept under that name (subs.c): for one of them that list is waited for, not only the addons' (an addon of the same name too) */
+    for (int pass = 0; pass < 2; pass++) { if (pass && ((fromB && P.extLoading) || (*pn && P.adxLoading)) && !P.sameWaitOver) { if (!P.sameWaitAt) P.sameWaitAt = now_() + 10; return; } /* (any addon's file in that language only once the list that may hold the same addon's is in, or 10 s on) */
       for (int i = 0; i < P.nAdx; i++) if (lang_match(P.adx[i].lang, w) && (pass || !strcmp(P.adx[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(2, &P.adx[i]); sync_auto_arm(); return; }
       for (int i = 0; i < P.nExt; i++) if (lang_match(P.ext[i].lang, w) && (pass || !strcmp(P.ext[i].addon, pn))) { P.autoSubDone = 1; set_ext_sub(1, &P.ext[i]); sync_auto_arm(); return; } }
     if (P.extLoading || P.adxLoading) return; } /* (the lists still coming) */
@@ -671,7 +676,7 @@ static void auto_sub(void) {
   /* domar: nothing in the settings' language, in the file or in any list (every list in, the file's tracks known or
      waited for): the second language, picked the same way (the file's own track first, then the lists) */
   { const char *w2 = want_sub2();
-    if (!second && *w2 && !P.extLoading && !P.adxLoading && (P.embKnown || P.embWaitOver) && lang_match(w, want_sub()) && !lang_match(w, w2)) {
+    if (!second && *w2 && !list_coming(P.extLoading, P.extTry, P.extRetryAt) && !list_coming(P.adxLoading, P.adxTry, P.adxRetryAt) && (P.embKnown || P.embWaitOver) && lang_match(w, want_sub()) && !lang_match(w, w2)) {
       fprintf(stderr, "[subs] no %s here: the second language, %s\n", w, w2); second = 1; pk = ""; pn = ""; w = w2; goto again; } }
 }
 /* a trailer's captions (IMDb's or YouTube's): handed over with the trailer, read when the CC button turns them on */
@@ -693,14 +698,14 @@ static void cc_toggle(void) {
 /* the built-in OpenSubtitles list; no answer: asked again 15, 30 and 45 s later */
 static void on_subs(SubEntry *subs, int n, int ok, void *ud) {
   if (!P.open || (unsigned)(uintptr_t)ud != P.subReq) { free(subs); return; }
-  if (!ok && P.extTry < 3) { free(subs); P.extRetryAt = now_() + (P.extTry + 1) * 15; return; }
+  if (!ok && P.extTry < 3) { free(subs); P.extRetryAt = now_() + (P.extTry + 1) * 15; auto_sub(); return; } /* (domar: the second language may stop waiting for it, list_coming) */
   free(P.ext); P.ext = subs; P.nExt = n; P.extLoading = 0; auto_sub(); refresh_tray(4); /* (an empty list too: what waited on it goes on) */
 }
 /* the addons' lists (the stream's own, every subtitles addon's): each answer replaces the list with all that came so
    far; nothing from anyone: asked again 15, 30 and 45 s later */
 static void on_adx(SubEntry *subs, int n, int final, int ok, void *ud) {
   if (!P.open || (unsigned)(uintptr_t)ud != P.adxReq) { free(subs); return; }
-  if (final && !ok && !n && P.adxTry < 3 && P.nSubAddons) { free(subs); P.adxRetryAt = now_() + (P.adxTry + 1) * 15; return; }
+  if (final && !ok && !n && P.adxTry < 3 && P.nSubAddons) { free(subs); P.adxRetryAt = now_() + (P.adxTry + 1) * 15; auto_sub(); return; } /* (domar: as on_subs) */
   free(P.adx); P.adx = subs; P.nAdx = n; P.adxLoading = !final; if (n || final) auto_sub(); refresh_tray(4);
 }
 static int hashable(const char *u) { return !strncmp(u, "http", 4) && !strstr(u, ".m3u8"); }
