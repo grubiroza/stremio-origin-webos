@@ -253,16 +253,19 @@ static void tick(float dt) {
     else if (!app_ok_down()) { S.holding = 0; play(S.idx); }
     else if (app_hold_k(S.holdAt) > 0 && !S.swelled) { S.swelled = 1; sound_play(SND_HOLD); } }
   /* domar: the pointer held on a row that has details: as the key's hold. With the cursor out the Magic Remote's OK
-     is a click, a row acts on its release, and a held one did nothing until it was let go (then it played) */
-  { double p0 = S.open && !S.info && S.zone == 0 && S.idx < S.n && (S.kind[S.idx] != R_PLAIN || compact(S.idx)) ? app_ptr_down_on(item_act, S.idx) : 0;
-    if (p0 > 0 && p0 != S.ptrHeldAt) { float hk = app_hold_k(p0); if (hk > 0 && !S.ptrSw) { S.ptrSw = 1; sound_play(SND_HOLD); } if (hk >= 1) { S.ptrHeldAt = p0; S.ptrSw = 0; info_open(); } } else S.ptrSw = 0; }
+     is a click, a row acts on its release, and a held one did nothing until it was let go (then it played). The row
+     is the one pressed, also when the highlight has not reached it yet (pressed within the pointer's brake) */
+  { double p0 = 0; int hi = -1;
+    if (S.open && !S.info) for (int i = 0; i < S.n && hi < 0; i++) if ((p0 = app_ptr_down_on(item_act, i)) > 0) hi = i;
+    if (hi >= 0 && (S.kind[hi] != R_PLAIN || compact(hi)) && p0 != S.ptrHeldAt) { float hk = app_hold_k(p0); if (hk > 0 && !S.ptrSw) { S.ptrSw = 1; sound_play(SND_HOLD); } if (hk >= 1) { S.ptrHeldAt = p0; S.ptrSw = 0; S.zone = 0; S.idx = hi; info_open(); } } else S.ptrSw = 0; }
 }
 /* (domar: while a row's details are up the pointer moves no focus under them, and a click anywhere puts them away, as a key does) */
 static void chip_focus(int i, int b) { (void)b; if (S.info) return; if (S.zone != 1 || S.chipIdx != i) { S.zone = 1; S.chipIdx = i; } }
 static void chip_act(int i, int b) { (void)b; if (S.info) { info_close(); return; } if (S.filter != S.chips[i]) { S.zone = 1; S.chipIdx = i; S.filter = S.chips[i]; S.idx = 0; rebuild(); } }
 static void item_focus(int i, int b) { (void)b; if (S.info) return; if (S.zone != 0 || S.idx != i) { S.zone = 0; S.idx = i; } }
-static void item_act(int i, int b) { (void)b; if (S.info) { info_close(); return; }
-  if (S.ptrHeldAt && S.ptrHeldAt == app_ptr_click_at()) return; /* (domar: the press that opened its details plays nothing) */
+static void item_act(int i, int b) { (void)b;
+  if (S.ptrHeldAt && S.ptrHeldAt == app_ptr_click_at()) return; /* (domar: the press that opened its details plays nothing, and let go on the row beside a panel narrower than it, it no longer puts them away at once) */
+  if (S.info) { info_close(); return; }
   S.zone = 0; S.idx = i; play(i); }
 static void info_ptr(int a, int b) { (void)a; (void)b; if (S.info) info_close(); }
 static void outside_act(int a, int b) { (void)a; (void)b; if (S.info) { info_close(); return; } streams_close(0); } /* beside the sheet: put it away */
