@@ -140,7 +140,7 @@ void sb_stream_kept_put(const char *id, const char *vid, cJSON *e);     /* domar
    name; label: the addon's own label for it ("" when none); order: the addon's place in the list */
 enum { SUB_STREAM = 0, SUB_ADDON = 1, SUB_FALLBACK = 2 };
 #define SB_SUB_URL 2048 /* domar: a subtitle's address (1024: one that carries its addon's setup, or another address inside it, was cut and never loaded) */
-typedef struct { char lang[24], name[64], url[SB_SUB_URL]; int n; char addon[64], label[96]; int from, order; char rel[96]; int hm, forced; double fps; } SubEntry; /* rel: the file's own name when told; hm: found by the video's hash; forced: only the lines in another language and the signs (its flag, else its name); fps: the frame rate it was timed for (0 unknown) */
+typedef struct { char lang[24], name[64], url[SB_SUB_URL]; int n; char addon[64], label[96]; int from, order; char rel[96]; int hm, forced; double fps; int part, parts; } SubEntry; /* domar: part / parts, one of a subtitle's parts (one per disc; subs_part_of), 0 / 0 a whole one */ /* rel: the file's own name when told; hm: found by the video's hash; forced: only the lines in another language and the signs (its flag, else its name); fps: the frame rate it was timed for (0 unknown) */
 /* the subtitles a stream object carried (stream.subtitles), kept from its addon's answer; *out malloc'd (NULL when none) */
 int  sb_stream_subs(const Stream *s, SubEntry **out);
 

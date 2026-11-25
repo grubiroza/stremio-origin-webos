@@ -530,8 +530,9 @@ static void emb_label(int i, char *out, size_t cap) {
   size_t l0 = strlen(out); tag_forced(out, cap, t->forced);
   if (strlen(out) == l0 && !(t->name[0] && strcmp(t->name, "#")) && i < 16 && embKind[i]) { size_t l = strlen(out); snprintf(out + l, cap - l, " · %s", embKind[i] == 2 ? "ASS" : T("Text")); } /* (the format's own short name: the column is narrow; a forced track says that instead) */
 }
-static void sub_begin(void) { SL.tok++; SL.at = SL.waitAt = now_(); SL.checkAt = 0; SL.wait = 1; SL.tv = SL.mkv = SL.failed = SL.shown = SL.retry = SL.ready = 0; }
-static void sub_reset(void) { unsigned t = SL.tok + 1; memset(&SL, 0, sizeof SL); SL.tok = t; memset(embKind, 0, sizeof embKind); }
+static void set_free(void); /* domar: (a subtitle in parts, below) */
+static void sub_begin(void) { set_free(); SL.tok++; SL.at = SL.waitAt = now_(); SL.checkAt = 0; SL.wait = 1; SL.tv = SL.mkv = SL.failed = SL.shown = SL.retry = SL.ready = 0; }
+static void sub_reset(void) { set_free(); unsigned t = SL.tok + 1; memset(&SL, 0, sizeof SL); SL.tok = t; memset(embKind, 0, sizeof embKind); }
 static int tv_has_text(int n) { VidTrack t[24]; int k = video_text_tracks(t, 24); for (int i = 0; i < k; i++) if (t[i].idx == n) return 1; return 0; }
 static void subs_off(void) { sync_stop(0); snprintf(P.curSub, sizeof P.curSub, "off"); subs_free(P.cues, P.ncues); P.cues = NULL; P.ncues = 0; sub_begin(); SL.wait = 0; video_select_text(-1); if (mkv) mkv_select(mkv, -1); fprintf(stderr, "[subs] off\n"); refresh_tray(4); }
 static void set_ext_sub(int list, const SubEntry *e);
@@ -549,9 +550,155 @@ static void on_sub_cues(int status_, Cue *cues, int n, void *ud) {
 static int sub_is(int list, const SubEntry *e) { return list && P.pick.list == list && !strncmp(P.curSub, "ext:", 4) && !strcmp(e->url, P.curSub + 4) && !strcmp(e->addon, P.pick.addon) && !strcmp(e->lang, P.pick.lang); }
 static int sub_is_arabic(void);
 static int sub_row(int list, const SubEntry *l, int n) { for (int i = 0; i < n; i++) if (sub_is(list, &l[i])) return i; return -1; }
+/* domar: a subtitle in parts, one per disc (the addon lists them under one name: ".../5844/0.vtt", ".../5844/1.vtt", each
+   timed from its own disc's start). Seen 2026-11-24: the first part, chosen by itself, ended at 1:45 of a 3:48 film, and
+   from there on no subtitle came back, whichever was picked (the second part, timed from 0, had nothing so late). The
+   parts are now one subtitle: marked in the lists (one row stands for them, "· 2 parts"), read one after another and
+   laid end to end. Where each part begins is read off a whole subtitle of the film in the same language from the lists
+   (lines matched by their words, Cyrillic read as Latin, at the frame-rate ratio that fits best): on titlovi.com's sets
+   for three long films the end of a part's last line was 1 to 37 s off (the site's own line after it, a second disc that
+   repeats the first one's last lines, a disc that runs on after its last line), the matched place within a second.
+   Without such a subtitle, or when it doesn't match closely, the place is where both parts carry the same lines, else
+   the end of the last line (the site's own lines left out). Only while the parts fit the film: together past its end,
+   or one as long as most of it (another film's subtitles in the same archive, a theatrical cut's film), they stay
+   apart, the chosen one alone, as before */
+#define SET_MAX 8
+static unsigned part_key(const SubEntry *e, int *k) { char key[SB_SUB_URL]; *k = subs_part_of(e->url, key, sizeof key); if (*k < 0) return 0; unsigned h = 2166136261u; for (const char *q = key; *q; q++) h = (h ^ (unsigned char)*q) * 16777619u; return h | 1; }
+static int sub_set_of(const SubEntry *a, const SubEntry *b) { /* two parts of one subtitle */
+  if (a->parts < 2 || b->parts < 2 || strcmp(a->addon, b->addon) || strcmp(a->label, b->label)) return 0;
+  char ka[24], kb[24]; if (strcmp(subs_lang_canon(a->lang, ka, sizeof ka), subs_lang_canon(b->lang, kb, sizeof kb))) return 0;
+  int x, y; return part_key(a, &x) == part_key(b, &y); }
+static void sets_mark(SubEntry *L, int n) { /* each list as it comes: which rows are parts of one subtitle */
+  if (n <= 0) return; unsigned *h = calloc((size_t)n, sizeof *h); int *k = calloc((size_t)n, sizeof *k); char (*lg)[24] = calloc((size_t)n, sizeof *lg);
+  if (!h || !k || !lg) { free(h); free(k); free(lg); return; }
+  for (int i = 0; i < n; i++) { L[i].part = L[i].parts = 0; h[i] = part_key(&L[i], &k[i]); subs_lang_canon(L[i].lang, lg[i], sizeof lg[i]); }
+  for (int i = 0; i < n; i++) { if (!h[i]) continue; int cnt = 0, rk = 0;
+    for (int j = 0; j < n; j++) if (h[j] == h[i] && !strcmp(L[j].addon, L[i].addon) && !strcmp(L[j].label, L[i].label) && !strcmp(lg[j], lg[i])) { cnt++; if (k[j] < k[i]) rk++; }
+    if (cnt >= 2 && cnt <= SET_MAX) { L[i].parts = cnt; L[i].part = rk; } }
+  free(h); free(k); free(lg); }
+static struct { unsigned tok; int n, got, chosen, wait, nref, refAt, placed; double waitUntil, place[SET_MAX], rate, spread; char lang[24], url[SET_MAX][SB_SUB_URL], ref[2][SB_SUB_URL]; Cue *c[SET_MAX]; int nc[SET_MAX], st[SET_MAX]; } SP;
+static void set_free(void) { for (int i = 0; i < SET_MAX; i++) subs_free(SP.c[i], SP.nc[i]); memset(&SP, 0, sizeof SP); }
+static int cue_ad(const char *t) { /* the site's own line ("Preuzeto sa www.titlovi.com"), not the film's */
+  static const char *const W[] = { "www.", "titlovi", "preuzeto", "prevod", "obrada", "sinhroniz", "sync", "subtitle", "opensub", "addic7ed", "prijevod",
+    "\xd0\xbf\xd1\x80\xd0\xb5\xd1\x83\xd0\xb7\xd0\xb5\xd1\x82\xd0\xbe", "\xd0\xbf\xd1\x80\xd0\xb5\xd0\xb2\xd0\xbe\xd0\xb4", "\xd0\xbe\xd0\xb1\xd1\x80\xd0\xb0\xd0\xb4\xd0\xb0" }; /* (and the same three in Cyrillic) */
+  for (size_t i = 0; i < sizeof W / sizeof W[0]; i++) if (strcasestr(t, W[i])) return 1;
+  return 0; }
+static int real_cue(const Cue *c) { return c->e - c->s >= 0.05 && c->t && !cue_ad(c->t); } /* (a zero-length line, "25.000" a frame-based file's rate, isn't one) */
+static double cues_end(const Cue *c, int n) { double m = 0; for (int i = 0; i < n; i++) if (real_cue(&c[i]) && c[i].e > m) m = c[i].e; return m; }
+/* a line's words for matching: lower case, Serbian Cyrillic as Latin, c s z for č ć š ž, dj for đ; two letters or more,
+   hashed, sorted, each once */
+#define PW_MAX 24
+static int line_words(const char *t, uint32_t *w) {
+  static const char *const CY[32] = { "a", "b", "v", "g", "d", "e", "z", "z", "i", "j", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "h", "c", "c", "s", "s", "", "i", "", "e", "ju", "ja" };
+  char cur[48]; int cl = 0, n = 0; const unsigned char *p = (const unsigned char *)(t ? t : "");
+  for (;;) { unsigned c = *p; const char *add = NULL; char one[2] = { 0, 0 };
+    if (c && c < 0x80) { p++; if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) { one[0] = (char)c; add = one; } else if (c >= 'A' && c <= 'Z') { one[0] = (char)(c + 32); add = one; } }
+    else if (c && (c & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) { unsigned cp = ((c & 0x1Fu) << 6) | (p[1] & 0x3Fu); p += 2;
+      if (cp >= 0x410 && cp <= 0x44F) add = CY[(cp - 0x410) & 31];
+      else if (cp == 0x402 || cp == 0x452 || cp == 0x110 || cp == 0x111) add = "dj"; else if (cp == 0x408 || cp == 0x458) add = "j";
+      else if (cp == 0x409 || cp == 0x459) add = "lj"; else if (cp == 0x40A || cp == 0x45A) add = "nj"; else if (cp == 0x40F || cp == 0x45F) add = "dz";
+      else if (cp == 0x40B || cp == 0x45B || cp == 0x106 || cp == 0x107 || cp == 0x10C || cp == 0x10D) add = "c";
+      else if (cp == 0x160 || cp == 0x161) add = "s"; else if (cp == 0x17D || cp == 0x17E) add = "z"; else if (cp >= 0xC0 && cp < 0x250) add = "_"; }
+    else if (c) { p++; while ((*p & 0xC0) == 0x80) p++; }
+    if (add) { for (const char *q = add; *q && cl < 46; q++) cur[cl++] = *q; continue; }
+    if (cl >= 2 && n < PW_MAX) { uint32_t h = 2166136261u; for (int i = 0; i < cl; i++) h = (h ^ (unsigned char)cur[i]) * 16777619u;
+      int k = n; while (k > 0 && w[k - 1] > h) k--;
+      if (!(k > 0 && w[k - 1] == h)) { memmove(w + k + 1, w + k, (size_t)(n - k) * sizeof *w); w[k] = h; n++; } }
+    cl = 0; if (!c) break; }
+  return n; }
+static int words_inter(const uint32_t *a, int na, const uint32_t *b, int nb) { int i = 0, k = 0, n = 0; while (i < na && k < nb) { if (a[i] == b[k]) { n++; i++; k++; } else if (a[i] < b[k]) i++; else k++; } return n; }
+static int sp_cmpd(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return x < y ? -1 : x > y; }
+static double sp_median(double *v, int n) { qsort(v, (size_t)n, sizeof *v, sp_cmpd); return n % 2 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2; }
+/* each part against a whole subtitle: every line of the part whose words are (half or more) those of one of its lines
+   pairs with it; at each frame-rate ratio a part's shift is the pairs' median and its spread their median distance from
+   it; the ratio with the least spread wins, and the parts are placed by their shifts. 1: placed (spread 4 s at most in
+   every part, 12 pairs at least) */
+typedef struct { double tp, tr; } SpPair;
+static int set_fit(const Cue *rc, int nrc) {
+  typedef struct { double s; uint32_t w[PW_MAX]; int n; } WL;
+  WL *R = malloc((size_t)(nrc > 0 ? nrc : 1) * sizeof *R); if (!R) return 0; int nR = 0;
+  for (int i = 0; i < nrc; i++) { if (!real_cue(&rc[i])) continue; R[nR].s = rc[i].s; R[nR].n = line_words(rc[i].t, R[nR].w); if (R[nR].n >= 2) nR++; }
+  SpPair *pr[SET_MAX] = { 0 }; int np[SET_MAX] = { 0 }, ok = nR >= 50, maxp = 0;
+  for (int i = 0; i < SP.n && ok; i++) { pr[i] = malloc((size_t)(SP.nc[i] > 0 ? SP.nc[i] : 1) * sizeof *pr[i]); if (!pr[i]) { ok = 0; break; }
+    for (int q = 0; q < SP.nc[i]; q++) { const Cue *c = &SP.c[i][q]; if (!real_cue(c)) continue; uint32_t w[PW_MAX]; int n = line_words(c->t, w); if (n < 2) continue;
+      int bj = -1; double bs = 0;
+      for (int r = 0; r < nR; r++) { int m = R[r].n; if (2 * (n < m ? n : m) < (n > m ? n : m)) continue; int in = words_inter(w, n, R[r].w, m); double jac = (double)in / (n + m - in); if (jac >= 0.5 && jac > bs) { bs = jac; bj = r; } }
+      if (bj >= 0) { pr[i][np[i]].tp = c->s; pr[i][np[i]].tr = R[bj].s; np[i]++; } }
+    if (np[i] > maxp) maxp = np[i]; }
+  static const double RATES[3] = { 1, 25 / 23.976, 23.976 / 25 };
+  double best = 1e18, bestRate = 1, med[SET_MAX], bmed[SET_MAX], bmad = -1, *v = ok ? malloc((size_t)(maxp > 0 ? maxp : 1) * sizeof *v) : NULL;
+  for (int ri = 0; ri < 3 && v; ri++) { double s = RATES[ri], tot = 0, mx = 0; int good = 1;
+    for (int i = 0; i < SP.n; i++) { if (np[i] < 12) { good = 0; break; }
+      for (int k = 0; k < np[i]; k++) v[k] = pr[i][k].tr - s * pr[i][k].tp; med[i] = sp_median(v, np[i]);
+      for (int k = 0; k < np[i]; k++) v[k] = fabs(pr[i][k].tr - s * pr[i][k].tp - med[i]); double mad = sp_median(v, np[i]); tot += mad; if (mad > mx) mx = mad; }
+    if (good && tot < best) { best = tot; bestRate = s; bmad = mx; memcpy(bmed, med, sizeof med); } }
+  free(v); for (int i = 0; i < SP.n; i++) free(pr[i]); free(R);
+  SP.spread = bmad; SP.rate = bestRate;
+  if (best >= 1e17 || bmad > 4) return 0;
+  for (int i = 0; i < SP.n; i++) SP.place[i] = (bmed[i] - bmed[0]) / bestRate;
+  return 1; }
+/* where part i begins by the lines both parts carry (a second disc that repeats the first one's last lines), in part
+   i-1's own time; -1 none */
+static double set_overlap(int i) {
+  const Cue *a = SP.c[i - 1], *b = SP.c[i]; int na = SP.nc[i - 1], nb = SP.nc[i], nc = 0, a0 = na, cnt = 0; double cand[100];
+  while (a0 > 0 && cnt < 10) { a0--; if (real_cue(&a[a0])) cnt++; }
+  for (int x = a0; x < na; x++) { if (!real_cue(&a[x])) continue; uint32_t wa[PW_MAX]; int n = line_words(a[x].t, wa); if (n < 2) continue;
+    for (int y = 0, seen = 0; y < nb && seen < 10; y++) { if (!real_cue(&b[y])) continue; seen++; if (b[y].s < 0.5) continue; /* (a first line clipped at 0: its own start is gone) */
+      uint32_t wb[PW_MAX]; int m = line_words(b[y].t, wb); if (m == n && !memcmp(wa, wb, (size_t)n * sizeof *wa) && nc < 100) cand[nc++] = a[x].s - b[y].s; } }
+  if (!nc) return -1; double lo = cand[0], hi = cand[0]; for (int k = 1; k < nc; k++) { if (cand[k] < lo) lo = cand[k]; if (cand[k] > hi) hi = cand[k]; }
+  return hi - lo <= 1.5 ? sp_median(cand, nc) : -1; }
+static void on_set_ref(int st, Cue *cues, int n, void *ud) {
+  (void)st; if (!P.open || (unsigned)(uintptr_t)ud != SL.tok || SP.tok != SL.tok || strncmp(P.curSub, "ext:", 4)) { subs_free(cues, n); return; } /* another choice since */
+  if (n > 0 && set_fit(cues, n)) SP.placed = 1;
+  else fprintf(stderr, "[subs] the parts against a whole subtitle (%d lines): no close match%s\n", n > 0 ? n : 0, SP.spread >= 0 && n > 0 ? "" : " (too few lines matched)");
+  subs_free(cues, n);
+  if (!SP.placed && ++SP.refAt < SP.nref) { subs_load_lang(SP.ref[SP.refAt], SP.lang, on_set_ref, ud); return; }
+  SP.wait = 1; SP.waitUntil = now_() + 15; }
+static void on_set_part(int st, Cue *cues, int n, void *ud) {
+  if (!P.open || (unsigned)(uintptr_t)ud != SL.tok || SP.tok != SL.tok || SP.got >= SP.n || strncmp(P.curSub, "ext:", 4)) { subs_free(cues, n); return; } /* another choice since */
+  int i = SP.got++; if (n > 0) { SP.c[i] = cues; SP.nc[i] = n; } else subs_free(cues, n); SP.st[i] = st;
+  if (SP.got < SP.n) { subs_load_lang(SP.url[SP.got], SP.lang, on_set_part, ud); return; }
+  if (SP.nref) { subs_load_lang(SP.ref[0], SP.lang, on_set_ref, ud); return; } /* a whole subtitle of the film: where each part begins */
+  SP.wait = 1; SP.waitUntil = now_() + 15; } /* (laid end to end once the film's length is known: set_tick) */
+static int set_load(int list, const SubEntry *e) { /* 1: the parts are on their way, the chosen one among them */
+  if (e->parts < 2) return 0; const SubEntry *L = list == 1 ? P.ext : P.adx; int nl = list == 1 ? P.nExt : P.nAdx, ks[SET_MAX], n = 0;
+  for (int i = 0; i < nl && n < SET_MAX; i++) { if (strcmp(L[i].url, e->url) && !sub_set_of(&L[i], e)) continue; int k; part_key(&L[i], &k); int at = n;
+    while (at > 0 && ks[at - 1] > k) { ks[at] = ks[at - 1]; snprintf(SP.url[at], sizeof SP.url[at], "%s", SP.url[at - 1]); at--; }
+    ks[at] = k; snprintf(SP.url[at], sizeof SP.url[at], "%s", L[i].url); n++; }
+  if (n < 2) { memset(&SP, 0, sizeof SP); return 0; }
+  SP.n = n; SP.tok = SL.tok; for (int i = 0; i < n; i++) if (!strcmp(SP.url[i], e->url)) SP.chosen = i; snprintf(SP.lang, sizeof SP.lang, "%s", e->lang);
+  { char want[24]; subs_lang_canon(e->lang, want, sizeof want); /* whole subtitles in its language for where the parts begin: its addon's first, then the other lists' */
+    for (int pass = 0; pass < 3 && SP.nref < 2; pass++) { const SubEntry *M = pass < 2 ? L : list == 1 ? P.adx : P.ext; int nm = pass < 2 ? nl : list == 1 ? P.nAdx : P.nExt;
+      for (int i = 0; i < nm && SP.nref < 2; i++) { const SubEntry *r = &M[i]; char k2[24]; if (r->parts >= 2 || r->forced || strcmp(subs_lang_canon(r->lang, k2, sizeof k2), want) || (pass == 0) != !strcmp(r->addon, e->addon)) continue;
+        snprintf(SP.ref[SP.nref++], sizeof SP.ref[0], "%s", r->url); } } }
+  fprintf(stderr, "[subs] a subtitle in %d parts (one per disc): read one after another%s\n", n, SP.nref ? ", with a whole one to place them" : "");
+  subs_load_lang(SP.url[0], SP.lang, on_set_part, (void *)(uintptr_t)SL.tok); return 1; }
+static void set_tick(void) {
+  if (!SP.wait) return;
+  if (SP.tok != SL.tok || strncmp(P.curSub, "ext:", 4)) { set_free(); return; } /* another choice since */
+  double d = dur(); if (d <= 0 && mkv && mkv_key_count(mkv) > 0) { double t; if (mkv_key_time(mkv, mkv_key_count(mkv) - 1, &t) && t > 0) d = t; } /* (the film's last keyframe: its length, near enough) */
+  if (d <= 0 && now_() < SP.waitUntil) return; /* the parts must fit the film: its length first */
+  SP.wait = 0; double off[SET_MAX], fb[SET_MAX], end = 0, longest = 0; int total = 0, missing = 0, byLines = 0;
+  for (int i = 0; i < SP.n; i++) { if (!SP.nc[i]) missing = 1; total += SP.nc[i]; double pe = cues_end(SP.c[i], SP.nc[i]); if (pe > longest) longest = pe; }
+  if (!missing) {
+    for (int i = 0; i < SP.n; i++) { if (!i) { fb[0] = 0; continue; } double ov = set_overlap(i); if (ov >= 0) byLines = 1; fb[i] = fb[i - 1] + (ov >= 0 ? ov : cues_end(SP.c[i - 1], SP.nc[i - 1])); } /* without a whole subtitle */
+    if (SP.placed) for (int i = 1; i < SP.n; i++) if (SP.place[i] <= SP.place[i - 1] || fabs(SP.place[i] - fb[i]) > 900) { fprintf(stderr, "[subs] the whole subtitle puts part %d at %.0f s, the lines at %.0f s: not taken\n", i + 1, SP.place[i], fb[i]); SP.placed = 0; break; } /* (a whole subtitle of another cut) */
+    for (int i = 0; i < SP.n; i++) off[i] = SP.placed ? SP.place[i] : fb[i];
+    end = off[SP.n - 1] + cues_end(SP.c[SP.n - 1], SP.nc[SP.n - 1]); }
+  Cue *J = d > 0 && !missing && end <= d + 120 && longest <= d * 0.85 ? malloc((size_t)total * sizeof *J) : NULL;
+  if (!J) { int c = SP.chosen; Cue *cs = SP.c[c]; int n = SP.nc[c], st = SP.st[c]; SP.c[c] = NULL; SP.nc[c] = 0;
+    if (d <= 0) fprintf(stderr, "[subs] the film's length not known: the chosen part alone\n");
+    else if (missing) fprintf(stderr, "[subs] a part didn't come: the chosen part alone\n");
+    else fprintf(stderr, "[subs] the %d parts run %.0f s one after another, the film %.0f s: not one subtitle, the chosen part alone\n", SP.n, end, d);
+    set_free(); on_sub_cues(cs ? 200 : st, cs, n, (void *)(uintptr_t)SL.tok); return; }
+  int k = 0; for (int i = 0; i < SP.n; i++) { for (int q = 0; q < SP.nc[i]; q++) { Cue c = SP.c[i][q]; if (c.e - c.s < 0.05) { free(c.t); continue; } c.s += off[i]; c.e += off[i]; J[k++] = c; } free(SP.c[i]); SP.c[i] = NULL; SP.nc[i] = 0; }
+  char at[16]; fmt_time(off[1], at, sizeof at);
+  if (SP.placed) fprintf(stderr, "[subs] %d parts laid end to end, placed by a whole subtitle (frame ratio %.4f, spread %.1f s): the second from %s (%.1f s; after its last line it would be %.1f s), %d lines to %.0f s of a %.0f s film\n", SP.n, SP.rate, SP.spread, at, off[1], fb[1], k, end, d);
+  else fprintf(stderr, "[subs] %d parts laid end to end %s: the second from %s (%.1f s), %d lines to %.0f s of a %.0f s film\n", SP.n, byLines ? "where they repeat the same lines" : "after each part's last line", at, off[1], k, end, d);
+  set_free(); on_sub_cues(200, J, k, (void *)(uintptr_t)SL.tok); }
 static void set_ext_sub(int list, const SubEntry *e) {
   const char *u = e->url; sync_stop(0); snprintf(P.curSub, sizeof P.curSub, "ext:%s", u); P.pick.list = list; snprintf(P.pick.addon, sizeof P.pick.addon, "%s", e->addon); snprintf(P.pick.lang, sizeof P.pick.lang, "%s", e->lang); subs_free(P.cues, P.ncues); P.cues = NULL; P.ncues = 0; video_select_text(-1); if (mkv) mkv_select(mkv, -1);
-  sub_begin(); fprintf(stderr, "[subs] chose external %s\n", u); subs_load_lang(u, e->lang, on_sub_cues, (void *)(uintptr_t)SL.tok); refresh_tray(4);
+  sub_begin(); fprintf(stderr, "[subs] chose external %s\n", u); if (!set_load(list, e)) subs_load_lang(u, e->lang, on_sub_cues, (void *)(uintptr_t)SL.tok); refresh_tray(4);
 }
 static void set_emb_sub(int n) {
   sync_stop(0); snprintf(P.curSub, sizeof P.curSub, "emb:%d", n); subs_free(P.cues, P.ncues); P.cues = NULL; P.ncues = 0; sub_begin();
@@ -713,14 +860,14 @@ static void cc_toggle(void) {
 static void on_subs(SubEntry *subs, int n, int ok, void *ud) {
   if (!P.open || (unsigned)(uintptr_t)ud != P.subReq) { free(subs); return; }
   if (!ok && P.extTry < 3) { free(subs); P.extRetryAt = now_() + (P.extTry + 1) * 15; auto_sub(); return; } /* (domar: the second language may stop waiting for it, list_coming) */
-  free(P.ext); P.ext = subs; P.nExt = n; P.extLoading = 0; auto_sub(); refresh_tray(4); /* (an empty list too: what waited on it goes on) */
+  free(P.ext); P.ext = subs; P.nExt = n; sets_mark(P.ext, P.nExt); P.extLoading = 0; auto_sub(); refresh_tray(4); /* (an empty list too: what waited on it goes on) */
 }
 /* the addons' lists (the stream's own, every subtitles addon's): each answer replaces the list with all that came so
    far; nothing from anyone: asked again 15, 30 and 45 s later */
 static void on_adx(SubEntry *subs, int n, int final, int ok, void *ud) {
   if (!P.open || (unsigned)(uintptr_t)ud != P.adxReq) { free(subs); return; }
   if (final && !ok && !n && P.adxTry < 3 && P.nSubAddons) { free(subs); P.adxRetryAt = now_() + (P.adxTry + 1) * 15; auto_sub(); return; } /* (domar: as on_subs) */
-  free(P.adx); P.adx = subs; P.nAdx = n; P.adxLoading = !final; if (n || final) auto_sub(); refresh_tray(4);
+  free(P.adx); P.adx = subs; P.nAdx = n; sets_mark(P.adx, P.nAdx); P.adxLoading = !final; if (n || final) auto_sub(); refresh_tray(4);
 }
 static int hashable(const char *u) { return !strncmp(u, "http", 4) && !strstr(u, ".m3u8"); }
 static char artName[256], artPoster[512], artBg[512], artLogo[512]; /* the next play's title and pictures as handed over (a phone's) */
@@ -794,7 +941,8 @@ static const char *sync_wait_txt(int stage) { return stage ? T("Looking for a ma
 static void sync_by_ref(const char *why) {
   int cap = P.nExt + P.nAdx, n = 0; SyncRef *rs = calloc((size_t)(cap ? cap : 1), sizeof *rs); if (!rs) { sync_end(T("Couldn’t sync")); return; }
   for (int l = 1; l <= 2; l++) { const SubEntry *L = l == 1 ? P.ext : P.adx; int nl = l == 1 ? P.nExt : P.nAdx;
-    for (int i = 0; i < nl; i++) { const SubEntry *e = &L[i]; if (sub_is(l, e)) continue; SyncRef *r = &rs[n++];
+    int cur = sub_row(l, L, nl); /* domar: a later part (timed from its disc's start) is no reference, nor a part of the subtitle synced */
+    for (int i = 0; i < nl; i++) { const SubEntry *e = &L[i]; if (sub_is(l, e) || (e->parts > 1 && (e->part > 0 || (cur >= 0 && sub_set_of(&L[cur], e))))) continue; SyncRef *r = &rs[n++];
       snprintf(r->url, sizeof r->url, "%s", e->url); snprintf(r->lang, sizeof r->lang, "%s", e->lang); snprintf(r->rel, sizeof r->rel, "%s", e->rel[0] ? e->rel : e->label);
       snprintf(r->from, sizeof r->from, "%s", e->addon); r->hm = e->hm; r->own = e->from == SUB_STREAM; r->fps = e->fps; } }
   SubQuery q; memset(&q, 0, sizeof q); snprintf(q.type, sizeof q.type, "%s", P.type); snprintf(q.vid, sizeof q.vid, "%s", P.vid); snprintf(q.url, sizeof q.url, "%s", P.url);
@@ -1699,7 +1847,7 @@ static void tray_data(void) {
       const char *w = want_sub(); char keys[64][24], names[64][64], onKey[24] = ""; int cnt[64], nk = 0, onAdx = sub_row(2, P.adx, P.nAdx);
       if (onAdx >= 0) subs_lang_canon(P.adx[onAdx].lang, onKey, sizeof onKey);
       for (int i = 0; i < P.nAdx; i++) { const SubEntry *e = &P.adx[i]; char k[24]; subs_lang_canon(e->lang, k, sizeof k); int f = -1; for (int q = 0; q < nk; q++) if (!strcmp(keys[q], k)) f = q;
-        if (f < 0 && nk < 64) { f = nk++; snprintf(keys[f], 24, "%s", k); snprintf(names[f], 64, "%s", T(e->name)); cnt[f] = 0; } if (f >= 0) cnt[f]++; }
+        if (f < 0 && nk < 64) { f = nk++; snprintf(keys[f], 24, "%s", k); snprintf(names[f], 64, "%s", T(e->name)); cnt[f] = 0; } if (f >= 0 && !(e->parts > 1 && e->part > 0)) cnt[f]++; }
       for (int a = 1; a < nk; a++) for (int b = a; b > 0; b--) { const char *w2 = want_sub2(); int pa = lang_match(keys[b - 1], w) ? 2 : lang_match(keys[b - 1], w2), pb = lang_match(keys[b], w) ? 2 : lang_match(keys[b], w2); if (pb > pa || (pb == pa && strcasecmp(names[b - 1], names[b]) > 0)) { char t1[24], t2[64]; int tc = cnt[b]; snprintf(t1, 24, "%s", keys[b]); snprintf(t2, 64, "%s", names[b]); snprintf(keys[b], 24, "%s", keys[b - 1]); snprintf(names[b], 64, "%s", names[b - 1]); cnt[b] = cnt[b - 1]; snprintf(keys[b - 1], 24, "%s", t1); snprintf(names[b - 1], 64, "%s", t2); cnt[b - 1] = tc; } else break; }
       int have = 0; for (int q = 0; q < nk; q++) if (!strcmp(keys[q], P.subLang)) have = 1;
       if (!have) { int pick = -1; /* the language of the subtitle on, else the one you read, else the first */
@@ -1711,9 +1859,10 @@ static void tray_data(void) {
       if (!nk) { if (P.adxLoading) { col_add(c1, 1); col_add(c1, 1); col_add(c1, 1); } else { x = col_add(c1, 0); snprintf(x->lb, 200, "%s", T("None found")); } }
       if (!c2->title[0]) snprintf(c2->title, 64, "%s", T("Subtitles"));
       for (int i = 0; i < P.nAdx; i++) { const SubEntry *e = &P.adx[i]; char k[24]; if (strcmp(subs_lang_canon(e->lang, k, sizeof k), P.subLang)) continue;
+        if (e->parts > 1 && e->part > 0) continue; /* domar: a subtitle's later parts: its first row stands for them */
         int same = 0; for (int j = 0; j < P.nAdx; j++) { char k2[24]; if (P.adx[j].order == e->order && !strcmp(subs_lang_canon(P.adx[j].lang, k2, sizeof k2), k)) same++; }
         x = col_add(c2, 4); if (e->label[0]) snprintf(x->lb, 200, "%s", e->label); else if (same > 1) snprintf(x->lb, 200, "%s %d", T(e->name), e->n); else snprintf(x->lb, 200, "%s", T(e->name));
-        tag_forced(x->lb, 200, e->forced); snprintf(x->sub, 120, "%s", e->addon); x->on = i == onAdx; x->spin = x->on && SL.wait; x->ls = 2; x->i = i; snprintf(x->u, sizeof x->u, "%s", e->url); }
+        tag_forced(x->lb, 200, e->forced); if (e->parts > 1) { char pn[8]; size_t ll = strlen(x->lb); snprintf(pn, sizeof pn, "%d", e->parts); snprintf(x->lb + ll, 200 - ll, " \xc2\xb7 %s", T1("{n} parts", "n", pn)); } snprintf(x->sub, 120, "%s", e->addon); x->on = i == onAdx || (onAdx >= 0 && sub_set_of(&P.adx[onAdx], e)); x->spin = x->on && SL.wait; x->ls = 2; x->i = i; snprintf(x->u, sizeof x->u, "%s", e->url); }
       if (!c2->n && nk) { x = col_add(c2, 0); snprintf(x->lb, 200, "%s", T("None found")); }
       else if (!c2->n && P.adxLoading) { col_add(c2, 1); col_add(c2, 1); }
     }
@@ -2620,6 +2769,7 @@ void player_tick(float dt) {
   if (P.extRetryAt && now_() >= P.extRetryAt) { P.extRetryAt = 0; load_ext_subs(P.extTry + 1); }
   if (P.adxRetryAt && now_() >= P.adxRetryAt) { P.adxRetryAt = 0; load_addon_subs(P.adxTry + 1); }
   if (P.embWaitAt && !P.embWaitOver && now_() >= P.embWaitAt) { P.embWaitOver = 1; auto_sub(); }
+  set_tick(); /* domar: a subtitle in parts, laid end to end once the film's length is known */
   if (P.sameWaitAt && !P.sameWaitOver && now_() >= P.sameWaitAt) { P.sameWaitOver = 1; auto_sub(); }
   if (P.prefWaitAt && !P.prefWaitOver && now_() >= P.prefWaitAt) { P.prefWaitOver = 1; fprintf(stderr, "[subs] the preferred addon has not answered in 10 s: the usual order\n"); auto_sub(); }
   sub_check(); ass_sync();

@@ -18,6 +18,10 @@ void subs_free(Cue *c, int n);
 /* languages: one canonical code per language whatever the source uses (639-2 B/T, 639-1, BCP-47) */
 const char *subs_lang_canon(const char *code, char *out, size_t cap);
 int  subs_lang_match(const char *a, const char *b);
+/* domar: a subtitle that is one of several parts (one per disc), by its address: the last segment a small number with an
+   extension (".../5844/0.vtt", ".../5844/1.vtt"); key: the address without that number (one subtitle's parts share it).
+   The number, -1 for any other address */
+int  subs_part_of(const char *url, char *key, size_t cap);
 const char *subs_lang_name(const char *code);  /* a track's language (eng / en / en-US) in English; NULL when unknown */
 const char *subs_sub_name(const char *code);   /* an OpenSubtitles entry's name (its own codes too: spl, pob, ze...); NULL when unknown */
 /* the built-in OpenSubtitles list for a video (asked by id alone); cb through subs_pump, subs malloc'd (the callback's

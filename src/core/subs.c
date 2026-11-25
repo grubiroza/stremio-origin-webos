@@ -223,6 +223,16 @@ int subs_os_hash(const char *url, double *size, char out[17]) {
 
 /* what an entry says of the file it was made for: its name, and whether the video's hash found it ("m": "h" on
    OpenSubtitles' answers; other addons' own words for it) */
+int subs_part_of(const char *url, char *key, size_t cap) {
+  if (key && cap) key[0] = 0; if (!url) return -1;
+  const char *q = strchr(url, '?'); size_t end = q ? (size_t)(q - url) : strlen(url), sl = end;
+  while (sl > 0 && url[sl - 1] != '/') sl--; if (!sl || sl >= end) return -1; /* (sl: where the last segment starts) */
+  size_t p = sl; while (p < end && url[p] >= '0' && url[p] <= '9') p++;
+  if (p == sl || p - sl > 2) return -1; /* 0..99: a part's number, never a file's id */
+  if (p < end) { if (url[p] != '.') return -1; size_t x = p + 1; while (x < end && ((url[x] >= 'a' && url[x] <= 'z') || (url[x] >= 'A' && url[x] <= 'Z'))) x++; if (x != end || x - p - 1 < 2 || x - p - 1 > 4) return -1; }
+  if (key && cap) snprintf(key, cap, "%.*s#%s", (int)sl, url, url + p);
+  return atoi(url + sl);
+}
 void subs_entry_facts(SubEntry *e, const struct cJSON *s) {
   const char *rel = js_str(s, "subtitleFileName", js_str(s, "releaseName", js_str(s, "release", ""))); snprintf(e->rel, sizeof e->rel, "%s", rel);
   const char *m = js_str(s, "m", ""); const cJSON *hm = cJSON_GetObjectItemCaseSensitive(s, "hashMatch"); const char *mb = js_str(s, "matchedBy", "");
@@ -269,12 +279,15 @@ static void list_parse(SubJob *j) {
   if (j->body && j->status == 200 && !js) fprintf(stderr, "[subs] %s: the answer is not JSON\n", j->fq->src[j->src].name);
   if (js) j->status = 1000; /* read */
   int n = arr ? cJSON_GetArraySize(arr) : 0; if (n > 400) n = 400; j->got = calloc(n ? n : 1, sizeof *j->got);
-  char langs[64][16]; int per[64], nl = 0; const FindSrc *fs = &j->fq->src[j->src];
+  char langs[64][16]; int per[64], nl = 0; const FindSrc *fs = &j->fq->src[j->src]; unsigned setH[64]; int setOn[64]; /* domar: the subtitle in parts kept last, per language */
   if (arr) cJSON_ArrayForEach(s, arr) { if (j->ngot >= n) break; const char *url = js_str(s, "url", NULL); if (!url || !*url || strlen(url) >= SB_SUB_URL) continue; /* (domar: 1024 stood here after SB_SUB_URL grew to 2048: an addon's subtitle with a longer address was still left out of the list) */
     char lang[24]; snprintf(lang, sizeof lang, "%s", js_str(s, "lang", "und")); for (char *p = lang; *p; p++) if (*p >= 'A' && *p <= 'Z') *p += 32; if (!*lang) snprintf(lang, sizeof lang, "und");
     char key[16]; subs_lang_canon(lang, key, sizeof key);
-    int li = -1; for (int i = 0; i < nl; i++) if (!strcmp(langs[i], key)) li = i; if (li < 0 && nl < 64) { li = nl++; snprintf(langs[li], sizeof langs[li], "%s", key); per[li] = 0; } if (li < 0) continue;
-    if (++per[li] > 12) continue; /* 12 per language from one source: enough to choose from */
+    int li = -1; for (int i = 0; i < nl; i++) if (!strcmp(langs[i], key)) li = i; if (li < 0 && nl < 64) { li = nl++; snprintf(langs[li], sizeof langs[li], "%s", key); per[li] = 0; setH[li] = 0; setOn[li] = 0; } if (li < 0) continue;
+    unsigned ph = 0; { char pk[SB_SUB_URL]; if (subs_part_of(url, pk, sizeof pk) >= 0) { ph = 2166136261u; for (const char *c = pk; *c; c++) ph = (ph ^ (unsigned char)*c) * 16777619u; ph |= 1; } }
+    if (!(ph && setOn[li] && setH[li] == ph)) { /* domar: one more part of the subtitle just kept is not one more choice (four parts took four of the twelve) */
+      if (++per[li] > 12) { setOn[li] = 0; continue; } /* 12 per language from one source: enough to choose from */
+      setH[li] = ph; setOn[li] = ph != 0; }
     SubEntry *e = &j->got[j->ngot++]; snprintf(e->lang, sizeof e->lang, "%s", lang); snprintf(e->url, sizeof e->url, "%s", url); snprintf(e->label, sizeof e->label, "%s", js_str(s, "label", ""));
     snprintf(e->addon, sizeof e->addon, "%s", fs->name); e->from = fs->from; e->order = fs->order; e->n = per[li]; subs_entry_facts(e, s); }
   cJSON_Delete(js); free(j->body); j->body = NULL;
