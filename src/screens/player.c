@@ -963,6 +963,7 @@ static void sync_auto_arm(void) { if (!P.nEmb && !P.isTrailer) { SY.autoWant = 1
 static void sync_auto_tick(void) {
   if (!SY.autoWant || SY.phase) return;
   if (SL.tok != SY.autoTok || strncmp(P.curSub, "ext:", 4) || P.isTrailer || P.subDelay != 0) { SY.autoWant = 0; return; } /* another choice since, or a delay of the viewer's */
+  if (!P.live) { SY.autoAt = now_(); return; } /* domar: the picture first (3 s of it): a film resumed at 1:12 was checked at 0 s, where the file's own lines weren't read, and the check gave up ("Still reading the film's subtitles") */
   if (!P.ncues || SL.wait || now_() - SY.autoAt < 3 || ((P.extLoading || P.adxLoading) && now_() - SY.autoAt < 15)) return;
   SY.autoWant = 0; SY.quiet = 1; SY.phase = 1; SY.t0 = now_(); SY.nextAt = 0; SY.center = video_time();
   fprintf(stderr, "[sync] checking the subtitle chosen at the start, by itself (at %.0f s)\n", SY.center);
