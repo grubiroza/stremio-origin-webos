@@ -2645,7 +2645,7 @@ static void css(void) {
   mo_to(&P.knA, (P.mode == 1 && P.row == 1) || P.skOn ? 1 : 0, .15f, C_EASE, 0);
 
   mo_to(&P.prA, P.prompt.k ? 1 : 0, .3f, C_EASE, 0); mo_to(&P.prY, P.prompt.k ? 0 : 20, .3f, C_OUT, 0); mo_to(&P.prB, P.osd ? 440 : 104, .3f, C_EASE, 0);
-  { float rest = SB_H * pos_pct() / 100.0f; mo_to(&P.subB, tr ? SB_H * 0.62f : P.osd ? fmaxf(420, rest) : P.skm ? fmaxf(200, rest) : rest, P.mode == 5 ? .16f : .3f, C_EASE, 0); } /* (the chosen height, never under the controls) */
+  { float rest = SB_H * pos_pct() / 100.0f; mo_to(&P.subB, tr ? (P.tray.kind == 4 ? fmaxf(420, rest) : SB_H * 0.62f) : P.osd ? fmaxf(420, rest) : P.skm ? fmaxf(200, rest) : rest, P.mode == 5 ? .16f : .3f, C_EASE, 0); } /* (the chosen height, never under the controls; domar: beside the Subtitles menu, over the controls as when they show) */
   mo_to(&P.hvA, P.hvOn ? 1 : 0, .15f, C_EASE, 0); mo_to(&P.ccS, strcmp(P.curSub, "off") ? 0 : 1, .26f, C_OUT, 0);
   mo_to(&P.p2pA, P.isP2p && P.p2pLine[0] && osd ? 1 : 0, .3f, C_EASE, 0);
   { int on = P.pg.at > 0 && now_() - P.pg.at < 6.0; /* 6 s from when it comes, controls or not, then it fades; once only */
@@ -2979,7 +2979,14 @@ static void draw_subs_(void);
 /* the subtitles */
 /* domar: gone while a tray is open (they fade with it): a tall tray (Sources, Subtitles) reaches past where they were
    lifted to, and the lines showed through its glass, over its rows. The TV's own lines (it holds the track) are not ours to hide */
-static void draw_subs(void) { float k = P.tray.kind ? 1 - P.tray.openA.v : 1; if (k <= 0.01f) { subDrew = 0; return; } if (k < 0.999f) gfx_opacity_push(k); draw_subs_(); if (k < 0.999f) gfx_opacity_pop(); }
+/* domar: but the Subtitles menu keeps them in view beside it (2026-11-25: "while I pick new subtitles I can't see whether
+   they are in sync with the film"): they glide to the space left of it as it opens, made smaller to fit there (a line
+   1500 wide fits), their bottom over the controls, and back as it closes */
+static void draw_subs(void) {
+  int ak = P.tray.kind < 0 ? -P.tray.kind : P.tray.kind;
+  if (ak == 4 && PG.w > 0 && PG.x > 680) { float a = P.tray.openA.v, left = PG.x - 40, s = fminf(1, (left - 80) / 1500.f), sc = 1 + (s - 1) * a, oy = SB_H - P.subB.v;
+    gfx_offset_push((left / 2 - SB_W / 2) * a, 0); gfx_scale_push(sc, sc, SB_W / 2, oy); draw_subs_(); gfx_scale_pop(); gfx_offset_pop(); return; }
+  float k = P.tray.kind ? 1 - P.tray.openA.v : 1; if (k <= 0.01f) { subDrew = 0; return; } if (k < 0.999f) gfx_opacity_push(k); draw_subs_(); if (k < 0.999f) gfx_opacity_pop(); }
 static void draw_subs_(void) {
   subDrew = 0; draw_subs_lines(); float a = P.posA.v;
   if (asssubs_on()) { asssubs_sample(a > 0.01f); return; }
