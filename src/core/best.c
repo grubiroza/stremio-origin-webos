@@ -283,6 +283,14 @@ static void rel_name(const Stream *s, char *out, size_t cap) { /* the release: t
     sc -= sp * 2; if (l > 8 && sc > bs) { bs = sc; best = p; bl = l; } if (!e) break; p = e + 1; }
   if (best && bs >= 4) { snprintf(out, cap, "%.*s", bl, best); return; }
   out[0] = 0; }
+/* domar: the converter is here (libsbdts beside the app): DTS / TrueHD this TV can't decode is converted on the TV and
+   plays (path c in the player); the scoring test has none, and keeps the old words */
+#ifdef SB_BEST_PURE
+static int conv_here(void) { return 0; }
+#else
+int hls_conv_available(void);
+static int conv_here(void) { return hls_conv_available(); }
+#endif
 void best_facts(const Stream *s, const TvCaps *c, double mbps, double durMin, BestFacts *f) {
   memset(f, 0, sizeof *f); if (!c) c = best_caps(); if (!c) c = &FALLBACK; if (mbps < 0) mbps = best_net_mbps(); if (durMin <= 0) durMin = 110;
   char t[2048], l[2048]; best_stream_info(s, t, sizeof t); lower(t, l, sizeof l); blank(l, "._-[]()");
@@ -314,8 +322,9 @@ void best_facts(const Stream *s, const TvCaps *c, double mbps, double durMin, Be
   else if (has_word(l, "av1") && !c->av1) { f->out = 1; snprintf(f->warn, sizeof f->warn, "%s", T("This TV can\xe2\x80\x99t play AV1 video")); }
   else if (unc) snprintf(f->warn, sizeof f->warn, "%s", T("Not cached yet: slow to start"));
   else if (p2p && sd >= 0 && sd < 8) snprintf(f->warn, sizeof f->warn, "%s", T("Few seeds: slow to start")); /* (how many is in its meta; a number here would need each language's plural forms) */
-  else if (mute) snprintf(f->warn, sizeof f->warn, "%s", dts ? T("DTS sound: this TV can\xe2\x80\x99t play it") : T("This TV can\xe2\x80\x99t play this video\xe2\x80\x99s sound (DTS or TrueHD)"));
+  else if (mute && !conv_here()) snprintf(f->warn, sizeof f->warn, "%s", dts ? T("DTS sound: this TV can\xe2\x80\x99t play it") : T("This TV can\xe2\x80\x99t play this video\xe2\x80\x99s sound (DTS or TrueHD)"));
   else if (need > 0 && cap > 0 && need > cap) snprintf(f->warn, sizeof f->warn, "%s", T("Too heavy for your internet speed"));
+  else if (mute) snprintf(f->warn, sizeof f->warn, "%s", dts ? T("DTS sound: converted on this TV") : T("TrueHD sound: converted on this TV")); /* domar: it plays (2026-11-24: read as "not for this TV", and these were passed over); a slower start is all it costs, so the line's speed comes first */
 }
 /* The TV's own resolution first (never above it), lower pictures only after it, and only among streams the line
    carries without buffering: a file's average bitrate (its size over the running time) plus 30% headroom must
