@@ -56,7 +56,7 @@ this branch are not rewritten, so links to them keep working.
 | [a786233](https://github.com/grubiroza/stremio-origin-webos/commit/a786233cae5647e470f00ae645ca52023825f020) | a subtitle picked by hand is kept: for a film too, always, and the very file |
 | [83ff21c](https://github.com/grubiroza/stremio-origin-webos/commit/83ff21c8bc9877695b01fe3225a7cc339ac937ce) | a second subtitle language (Settings > Subtitles), taken when a film has none in the first |
 | [3da1c7e](https://github.com/grubiroza/stremio-origin-webos/commit/3da1c7e55a2b6f6f3e0a1cd3f69b21ff28fb6814) | subtitle size in steps of 5 % (70 to 180) |
-| [fc963e3](https://github.com/grubiroza/stremio-origin-webos/commit/fc963e331249f3af9a910c7f8ad4add457188b56) | the subtitles go while a player menu is open (they showed through a tall one) |
+| [fc963e3](https://github.com/grubiroza/stremio-origin-webos/commit/fc963e331249f3af9a910c7f8ad4add457188b56) | the subtitles go while a player menu is open (they showed through a tall one); the Subtitles menu keeps them in view beside it since a2d99d6 |
 | [3857c32](https://github.com/grubiroza/stremio-origin-webos/commit/3857c32323b2ec5e4118ead955e5053db5a8a844) | streams sheet: a film's or an episode's stream in two lines, as the player's Sources lists it; held OK shows everything the addon wrote |
 | [ff3bf77](https://github.com/grubiroza/stremio-origin-webos/commit/ff3bf774f44f5cae4a0ac616d39710aed47f6526) | an episode the metadata still calls "TBA" takes its name from TMDB (with the user's key) |
 | [e908360](https://github.com/grubiroza/stremio-origin-webos/commit/e908360722746f653c3c90ab6ffc9693661314e3) | the log kept on the TV is 4 MB, not 400 KB |
@@ -85,6 +85,20 @@ upstream's own design, are not listed. The commit each one corrects is in the la
 | [8211006](https://github.com/grubiroza/stremio-origin-webos/commit/8211006037fa63bc01182bc88acb025b4b017a99) | player: the subtitle size card slides with the pointer too (it stayed among the seven sizes shown first) | 3da1c7e, eb3e830 |
 | [ecefb51](https://github.com/grubiroza/stremio-origin-webos/commit/ecefb51f73842cc8feb7c9d5035ccc548fb26af9) | Dolby Vision profile 5: one file shown otherwise no longer turns a learned "yes" off for good | 446e2d8 |
 | [b3e359d](https://github.com/grubiroza/stremio-origin-webos/commit/b3e359daa54889662309d0e828cc0cb56c13c070) | seek previews: a plain part from where the link led is one range at a time there too; that place is no longer dropped for every reader | feef8c6 |
+
+## Changes of 2026-11-25 (not reported yet)
+
+From a night of watching: an 8K file offered as any other and said to fail on its sound, the failed file kept as the
+one to resume, a stream list that called converted sound unplayable, and subtitles in parts (one per disc) whose first
+part ended mid-film.
+
+| Commit | What |
+|---|---|
+| [02c8f54](https://github.com/grubiroza/stremio-origin-webos/commit/02c8f5400ccaa58e7bec441fa4074c8043e71d8f) | an 8K file (named 4320p or 8K) is known as one: above a 4K panel it is left out of the best pick and goes to the end of Sources, and its failure says "This TV can't play 8K video" (the TV refuses its picture, 601, often its sound first, 200: it was said as the sound); a stream that never played is not the remembered one (the one before it is put back); HEVC from the local stream, once seen playing, stays learned when one file's converted stream fails; the file's audio tracks in the log |
+| [b5363cb](https://github.com/grubiroza/stremio-origin-webos/commit/b5363cb4537ad7e46c9aab831319b3d3899be0dd) | sound this TV can't decode but the app converts: the stream lists say "TrueHD sound: converted on this TV" (or DTS), not that it can't play, and after a too-heavy warning |
+| [3d8400b](https://github.com/grubiroza/stremio-origin-webos/commit/3d8400b42c6ef6dfb7b3f8d2bc654c114a0b7d6f) | a subtitle in parts (titlovi.com lists each disc's file as a subtitle, timed from its own start): one row, the parts laid end to end, each placed by a whole subtitle of the film in the same language (words matched, Cyrillic read as Latin, the frame-rate ratio that fits), else by the lines both parts repeat, else after the last line; only while they fit the film |
+| [ffad5ad](https://github.com/grubiroza/stremio-origin-webos/commit/ffad5adce61a9a5ce4a928add00656ccac3dfa63) | Auto-sync: the subtitle checked by itself at the start waits for the picture (a resumed film was checked at 0 s, where nothing was read, and the check gave up) |
+| [a2d99d6](https://github.com/grubiroza/stremio-origin-webos/commit/a2d99d67eba0141f04dd9b4a1449be4b1fc4654d) | the Subtitles menu keeps the subtitles in view, beside it and smaller, so a subtitle just picked can be seen against the film |
 
 ## Local aids (not meant for upstream)
 
