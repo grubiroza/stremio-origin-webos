@@ -58,10 +58,11 @@ static void lower(const char *s, char *out, size_t cap) { size_t i = 0; for (; s
 static int has_word(const char *s, const char *w) { const char *p = s; size_t n = strlen(w); while ((p = strstr(p, w))) { int a = p == s || !isalnum((unsigned char)p[-1]), b = !isalnum((unsigned char)p[n]); if (a && b) return 1; p += n; } return 0; }
 static const char *res_of(const char *label) {
   char s[640]; lower(label, s, sizeof s);
+  if (strstr(s, "4320p") || has_word(s, "8k")) return "8K"; /* (domar) */
   if (strstr(s, "2160p") || has_word(s, "4k") || has_word(s, "uhd")) return "4K"; if (strstr(s, "1440p") || has_word(s, "2k")) return "1440p"; if (strstr(s, "1080p") || has_word(s, "fhd")) return "1080p";
   if (strstr(s, "720p")) return "720p"; if (strstr(s, "576p") || strstr(s, "480p") || has_word(s, "sd")) return "SD"; return "";
 }
-static const char *res_of_video(int w, int h) { if (!w || !h) return ""; if (w >= 3200 || h >= 1800) return "4K"; if (w >= 2400 || h >= 1300) return "1440p"; if (w >= 1700 || h >= 950) return "1080p"; if (w >= 1150 || h >= 650) return "720p"; return "SD"; }
+static const char *res_of_video(int w, int h) { if (!w || !h) return ""; if (w >= 6000 || h >= 3400) return "8K"; if (w >= 3200 || h >= 1800) return "4K"; if (w >= 2400 || h >= 1300) return "1440p"; if (w >= 1700 || h >= 950) return "1080p"; if (w >= 1150 || h >= 650) return "720p"; return "SD"; }
 static void hdr_of(const char *label, char *out, size_t cap) {
   char s[640]; lower(label, s, sizeof s); for (char *c = s; *c; c++) if (*c == '.' || *c == '_') *c = ' ';
   int dv = has_word(s, "dv") || has_word(s, "dovi") || strstr(s, "dolby vision"); out[0] = 0;
@@ -334,8 +335,19 @@ static void pw_tick(void) { if (!P.pw.on) return; VidState pv = video_state(); d
     else { snprintf(m, sizeof m, "%d", (int)ceil(e / 60)); snprintf(tl, sizeof tl, "%s", T1("about {n} min left", "n", m)); }
     size_t l = strlen(line); snprintf(line + l, sizeof line - l, "  \xc2\xb7  %s", tl); }
   status_apply(line); }
+/* domar: a stream picked that never played (2026-11-24: an 8K file, three times from three addons) stayed the remembered
+   one, and Continue Watching took it again, to the same error. The stream remembered before is held until the new one's
+   picture runs: a failure before that puts it back (back 1), or forgets the one that failed when this TV can't play it at
+   all (back 2: one resumed from Continue Watching too) */
+static struct { char id[SB_ID], vid[SB_VID]; cJSON *prev; int on; } KB;
+static void kb_drop(int back) {
+  if (KB.on && back) { int had = KB.prev != NULL; sb_stream_kept_put(KB.id, KB.vid, back == 1 ? KB.prev : NULL); if (back == 1) KB.prev = NULL;
+    fprintf(stderr, "[player] the stream that didn't play is not remembered: %s\n", back == 2 ? "this TV can't play it at all" : had ? "the one before it again" : "none, as before it"); }
+  if (KB.prev) cJSON_Delete(KB.prev); KB.prev = NULL; KB.on = 0; }
+static void kb_hold(void) { kb_drop(0); snprintf(KB.id, sizeof KB.id, "%s", P.id); snprintf(KB.vid, sizeof KB.vid, "%s", P.vid); KB.prev = sb_stream_kept_dup(P.id, P.vid); KB.on = 1; }
 static void fail(const char *t) { if (live_title() && !P.isTrailer && P.open && !P.closing && live_failover(P.id)) { fprintf(stderr, "[player] %s: the channel's next stream instead\n", t); video_unload(); P.live = 0; P.quiet = 1; return; } /* a channel: another of its streams first */
-  fprintf(stderr, "[player] %s | %s %s %s\n", t, P.type, P.id, P.vid); P.failed = 1; if (live_title()) live_reach_set(P.id, -1); /* (a channel that would not play: off air) */ video_unload(); P.live = 0;
+  fprintf(stderr, "[player] %s | %s %s %s\n", t, P.type, P.id, P.vid); P.failed = 1;
+  if (KB.on && !strcmp(KB.id, P.id) && !strcmp(KB.vid, P.vid)) kb_drop(!strcmp(t, T("This TV can’t play 8K video")) || !strcmp(t, T("This TV can’t play AV1 video")) ? 2 : 1); /* (domar) */ if (live_title()) live_reach_set(P.id, -1); /* (a channel that would not play: off air) */ video_unload(); P.live = 0;
   P.canNext = P.st.url[0] && strcmp(P.type, "other") && !P.isTrailer; if (P.canNext) best_skip(P.st.url); /* OK picks the best of the others */
   char s[400]; snprintf(s, sizeof s, "%s  ·  %s", t, P.canNext ? T("OK: try the next stream  ·  Back: close") : T("Press Back to close")); set_status(s); }
 /* why a stream did not play, in words: what its server answered, the torrent's peers, then the TV's own codes
@@ -359,6 +371,7 @@ static const char *fail_reason(void) {
   int hevc = has_word(lab, "x265") || has_word(lab, "h265") || strstr(lab, "h.265") || strstr(lab, "h 265") || has_word(lab, "hevc"), ten = strstr(lab, "10bit") || strstr(lab, "10 bit") || strstr(lab, "10-bit") || has_word(lab, "hdr") || has_word(lab, "hdr10");
   char hdr[64]; best_hdr_of(P.sname, hdr, sizeof hdr); const char *res = best_res_of(P.sname);
   if (c && has_word(lab, "av1") && !c->av1) return T("This TV can’t play AV1 video");
+  if (c && (strstr(lab, "4320p") || has_word(lab, "8k")) && (c->maxRes ? c->maxRes : 1080) < 4320) return T("This TV can’t play 8K video"); /* domar: the TV refuses its picture (601) and often its sound first (200): it was said as the sound */
   if (c && hevc && ten && !c->hdr) return T("This TV can’t play HEVC 10-bit video");
   if (c && strstr(hdr, "DV") && !strstr(hdr, "HDR") && !c->dv) return T("This TV can’t play Dolby Vision video");
   if (c && res && !strcmp(res, "4K") && c->maxRes && c->maxRes < 2160) return T("This TV can’t play 4K video");
@@ -1023,7 +1036,7 @@ static void dts_conv_failed(const char *why) { /* the converted stream didn't pl
     if (P.dts.copyA) { P.dts.conv = 0; video_load(P.url); return; }
     P.dts.conv = 1; P.dts.convAt = P.startAt; P.dts.convT0 = now_(); hls_conv_start(P.url, P.dts.convOrd, conv_flags(P.dts.convOrd));
     fprintf(stderr, "[dts] the sound alone converted from %.0f s\n", P.startAt); return; }
-  if (P.dts.hevc) best_learn("hlsHevcOk", 0);
+  if (P.dts.hevc) { if (best_learned("hlsHevcOk") == 1) fprintf(stderr, "[dts] HEVC from local HLS has played here before: this file's trouble, the lesson kept\n"); else best_learn("hlsHevcOk", 0); } /* domar: one file turned it off for good, and every conversion after it with it (Dolby Vision too) */
   hls_conv_stop(); P.dts.conv = 0; P.dts.gaveUp = 1; fail(T("This TV can’t play this video’s sound (DTS or TrueHD)"));
 }
 /* Once a second while playing: the track the TV plays is checked against what this TV decodes. DTS still unknown here
@@ -2204,7 +2217,7 @@ static void play_stream(const Stream *s, const char *vid, double startAt) {
   P.st = *s; snprintf(P.url, sizeof P.url, "%s", s->url); snprintf(P.alt, sizeof P.alt, "%s", nextAlt); nextAlt[0] = 0;
   if ((s->hdrs[0] || s->rhdrs[0]) && !strncmp(s->url, "http", 4)) { hproxy_url(s->url, s->hdrs, s->rhdrs, P.url, sizeof P.url); fprintf(stderr, "[player] the stream wants its own headers: through %s\n", P.url); } /* every request for it carries them */
   char info[700]; sb_stream_info(s, info, sizeof info); snprintf(P.sname, sizeof P.sname, "%s", info); snprintf(P.saddon, sizeof P.saddon, "%s", s->addon);
-  if (!P.isTrailer && strcmp(P.type, "other")) sb_remember_stream(P.id, P.vid, s); /* the torrent itself, resolved again next time */
+  if (!P.isTrailer && strcmp(P.type, "other")) { kb_hold(); sb_remember_stream(P.id, P.vid, s); } /* the torrent itself, resolved again next time (domar: the one before it held until this one's picture runs) */
   if (!strncmp(P.url, "ytid:", 5)) { /* a YouTube video: found as the trailers are, behind the title art */
     P.resolving = 1; set_status(""); p2pTok++; P.ytTok = trailer_find(NULL, P.url + 5, 0, on_yt, (void *)(uintptr_t)p2pTok); return; }
   if (!strncmp(P.url, "p2p://", 6)) { /* the engine finds the peers and the file while the title art shows how it goes */
@@ -2618,7 +2631,7 @@ void player_tick(float dt) {
   if (!P.live && P.started && video_live()) { /* (P.started: this title's own stream asked for, as start_video says; before it, a picture still running is another's: Home's trailer while the best stream is chosen) */
     if (!P.liveT0) { P.liveT0 = now_(); P.steadyAt = 0; apply_aspect(); try_resume(); auto_audio(); load_emb_tracks(); }
     int steady = (video_state() == VID_PLAYING || paused()) && !video_settling(); if (!steady) P.steadyAt = 0; else if (!P.steadyAt) P.steadyAt = now_();
-    if ((P.steadyAt && now_() - P.steadyAt > (P.quiet ? 0.06 : 0.35)) || now_() - P.liveT0 > 15) { /* (a channel switched to: up at its first frames) */ P.live = 1; pg_ask(); if (live_title()) live_reach_set(P.id, 1); /* (a channel: it really plays) */ fprintf(stderr, "[player] picture running after %.1f s\n", now_() - P.liveT0); if (resumeMsg[0]) { toast(resumeMsg, 2500, NULL); resumeMsg[0] = 0; }
+    if ((P.steadyAt && now_() - P.steadyAt > (P.quiet ? 0.06 : 0.35)) || now_() - P.liveT0 > 15) { /* (a channel switched to: up at its first frames) */ P.live = 1; pg_ask(); if (live_title()) live_reach_set(P.id, 1); /* (a channel: it really plays) */ fprintf(stderr, "[player] picture running after %.1f s\n", now_() - P.liveT0); kb_drop(0); /* (domar: it plays: the stream remembered now stands) */ if (resumeMsg[0]) { toast(resumeMsg, 2500, NULL); resumeMsg[0] = 0; }
       { static int tr; const char *e = getenv("SB_PLAY_TRAY"); if (e && !tr) { tr = 1; open_tray(!strcmp(e, "src") ? 2 : !strcmp(e, "eps") ? 1 : !strcmp(e, "aud") ? 3 : 4); } } } } /* (development: SB_PLAY_TRAY=src|eps|aud|subs opens that tray once the picture runs, for pictures of it) */
   if (!video_live()) P.liveT0 = 0;
   if (P.live && !P.skipsAsked && dur() > 0) load_skips(); /* once the length is known: segments are checked against it */

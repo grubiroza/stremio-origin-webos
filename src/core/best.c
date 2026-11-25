@@ -62,6 +62,7 @@ void best_stream_info(const Stream *s, char *out, size_t cap) {
 
 const char *best_res_of(const char *label) {
   char s[2048]; lower(label, s, sizeof s);
+  if (strstr(s, "4320p") || has_word(s, "8k")) return "8K"; /* domar: an 8K file (AI upscales "4320p") read as nothing at all, so a 4K TV was offered it; it fails there (601) */
   if (strstr(s, "2160p") || has_word(s, "4k") || has_word(s, "uhd")) return "4K";
   if (strstr(s, "1440p") || has_word(s, "2k")) return "1440p";
   if (strstr(s, "1080p") || has_word(s, "fhd")) return "1080p";
@@ -138,8 +139,8 @@ static int seeds_of(const char *t) {
   for (const char *p = t; *p; p++) { if (!is_dig((unsigned char)*p)) continue; const char *q = p; while (is_dig((unsigned char)*q)) q++; while (*q == ' ') q++; if (ci_eq(q, "seed")) return num_at(p); }
   return -1;
 }
-static int res_n(const char *r) { return !strcmp(r, "4K") ? 2160 : !strcmp(r, "1440p") ? 1440 : !strcmp(r, "1080p") ? 1080 : !strcmp(r, "720p") ? 720 : !strcmp(r, "SD") ? 480 : 0; }
-static double by_res(int r, double r2160, double r1440, double r1080, double r720, double r480) { return r == 2160 ? r2160 : r == 1440 ? r1440 : r == 1080 ? r1080 : r == 720 ? r720 : r480; }
+static int res_n(const char *r) { return !strcmp(r, "8K") ? 4320 : !strcmp(r, "4K") ? 2160 : !strcmp(r, "1440p") ? 1440 : !strcmp(r, "1080p") ? 1080 : !strcmp(r, "720p") ? 720 : !strcmp(r, "SD") ? 480 : 0; }
+static double by_res(int r, double r2160, double r1440, double r1080, double r720, double r480) { return r >= 2160 ? r2160 : r == 1440 ? r1440 : r == 1080 ? r1080 : r == 720 ? r720 : r480; }
 /* Number#toFixed(1): half-way cases round up on the exact decimal value, as the web shows sizes */
 static void to_fixed1(double v, char *out, size_t cap) {
   char b[64]; snprintf(b, sizeof b, "%.20f", v); char *d = strchr(b, '.'); if (!d) { snprintf(out, cap, "%s.0", b); return; }

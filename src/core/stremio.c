@@ -1079,6 +1079,13 @@ int sb_resume_stream(const char *id, const char *vid, Stream *out) {
 }
 void sb_forget_stream(const char *id, const char *vid) { cJSON *all = store_node("streams"); if (!cJSON_IsObject(all)) return; char k[200]; snprintf(k, sizeof k, "%s_%s", id, vid);
   if (cJSON_GetObjectItemCaseSensitive(all, k)) { cJSON_DeleteItemFromObjectCaseSensitive(all, k); store_set_node("streams", all); } }
+cJSON *sb_stream_kept_dup(const char *id, const char *vid) {
+  char k[200]; snprintf(k, sizeof k, "%s_%s", id, vid); const cJSON *all = store_node("streams"), *s = all ? cJSON_GetObjectItemCaseSensitive(all, k) : NULL;
+  return s ? cJSON_Duplicate(s, 1) : NULL; }
+void sb_stream_kept_put(const char *id, const char *vid, cJSON *e) {
+  cJSON *all = store_node("streams"); if (!cJSON_IsObject(all)) { if (!e) return; all = cJSON_CreateObject(); store_set_node("streams", all); }
+  char k[200]; snprintf(k, sizeof k, "%s_%s", id, vid); cJSON_DeleteItemFromObjectCaseSensitive(all, k); if (e) cJSON_AddItemToObject(all, k, e);
+  store_set_node("streams", all); }
 void sb_remember_stream(const char *id, const char *vid, const Stream *s) {
   if (!s->url[0]) return;
   cJSON *all = store_node("streams"); if (!cJSON_IsObject(all)) { all = cJSON_CreateObject(); store_set_node("streams", all); }

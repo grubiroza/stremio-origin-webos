@@ -736,6 +736,8 @@ static int probe(MkvSession *s) {
     const char *c = t->codec; t->kind = t->encrypted ? 0 : (!strcmp(c, "S_TEXT/UTF8") || !strcmp(c, "S_TEXT/ASCII") || !strcmp(c, "S_TEXT/WEBVTT")) ? 1 : (!strcmp(c, "S_TEXT/ASS") || !strcmp(c, "S_TEXT/SSA") || !strcmp(c, "S_ASS") || !strcmp(c, "S_SSA")) ? 2 : 0; }
   { char l[300] = ""; size_t o = 0; for (int k = 0; k < i->ntr && o + 40 < sizeof l; k++) { Track *t = &i->tr[k]; if (t->type != 17) continue; o += snprintf(l + o, sizeof l - o, "%s%s %s%s", o ? ", " : "", t->codec, t->lang, t->encrypted ? " (encrypted)" : t->hasComp ? " (compressed)" : ""); }
     fprintf(stderr, "[mkv] %d tracks; subtitles: %s\n", i->ntr, l[0] ? l : "none"); } /* (what the file carries, for a text track missed) */
+  { char l[400] = ""; size_t o = 0; for (int k = 0; k < i->ntr && o + 48 < sizeof l; k++) { Track *t = &i->tr[k]; if (t->type != 2) continue; o += snprintf(l + o, sizeof l - o, "%s%s %s %d ch%s", o ? ", " : "", t->codec, t->lang[0] ? t->lang : "und", t->channels ? t->channels : 2, t->def ? " (default)" : ""); }
+    if (l[0]) fprintf(stderr, "[mkv] audio: %s\n", l); } /* domar: the sound it carries (a file the TV refused says which) */
   return NR_OK;
 }
 static void read_chapters(MkvSession *s) {

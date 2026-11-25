@@ -131,7 +131,9 @@ void sb_stream_info(const Stream *s, char *out, size_t cap);
 /* the last played stream of a title/episode */
 int  sb_resume_stream(const char *id, const char *vid, Stream *out);
 void sb_remember_stream(const char *id, const char *vid, const Stream *s);
-void sb_forget_stream(const char *id, const char *vid); /* domar: a remembered stream that plays something else and is offered by nobody any more */
+void sb_forget_stream(const char *id, const char *vid);
+cJSON *sb_stream_kept_dup(const char *id, const char *vid);            /* domar: the remembered stream's entry, a copy (NULL: none) */
+void sb_stream_kept_put(const char *id, const char *vid, cJSON *e);     /* domar: that entry back (owned; NULL: none remembered) */ /* domar: a remembered stream that plays something else and is offered by nobody any more */
 
 /* ---- subtitles ---- */
 /* from: where it came from (the stream itself, a subtitles addon, the OpenSubtitles fallback); addon: that source's
