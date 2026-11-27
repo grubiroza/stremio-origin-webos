@@ -100,6 +100,18 @@ part ended mid-film.
 | [ffad5ad](https://github.com/grubiroza/stremio-origin-webos/commit/ffad5adce61a9a5ce4a928add00656ccac3dfa63) | Auto-sync: the subtitle checked by itself at the start waits for the picture (a resumed film was checked at 0 s, where nothing was read, and the check gave up) |
 | [a2d99d6](https://github.com/grubiroza/stremio-origin-webos/commit/a2d99d67eba0141f04dd9b4a1449be4b1fc4654d) | the Subtitles menu keeps the subtitles in view, beside it and smaller, so a subtitle just picked can be seen against the film |
 
+## Changes of 2026-11-27 (not reported yet)
+
+Dolby Vision for HDR10: on a TV with Dolby Vision, an HDR10 film is shown in the TV's Dolby Vision modes. Tried by
+hand first (an HDR10 clip with a static profile 8.1 RPU, through the app's converter: the TV said DolbyVision), then
+in the app on an LG C9 (webOS 4.5) with two HDR10 clips (AAC and E-AC3 sound, 3840x2160 and 3840x1608): both
+DolbyVision, `dynamicRange: dolbyHdr`. The values are static (no new picture data), so what it brings is the TV's own
+Dolby Vision processing; an HDR10+ source's dynamic values are not used (yet).
+
+| Commit | What |
+|---|---|
+| [4c7fd02](https://github.com/grubiroza/stremio-origin-webos/commit/4c7fd02f99950b7ba7b7d609c0767ede1e864bae) | once the TV says the file plays as HDR10 (HEVC in Matroska, no Dolby Vision of its own, at most 35 Mbit/s), the picture goes the way a web copy's profile 8 goes (converted on the TV, from local HLS), and on its way (`dvts.c`) each frame gets a static profile 8.1 RPU made beforehand by dovi_tool 2.3.4 from the film's MaxCLL and mastering peak (`dvstatic_rpu.h`), and the PMT's HEVC entry the DOVI registration and the Dolby Vision video stream descriptor; the base layer is untouched. Settings > Playback > "Dolby Vision for HDR10" (on); its own lesson (`dvHdrHls`) |
+
 ## Local aids (not meant for upstream)
 
 | Commit | What |
