@@ -59,4 +59,7 @@ int    video_edge_colors(uint32_t *out4); /* the picture's left, top, right, bot
 void   video_pump(void);                     /* delivers the platform's events; call per frame */
 void   video_ss_pump(void);                  /* domar: the TV's screen-saver request asked for as soon as it can be, playing or not; every frame */
 void   video_hdr_values(int on);             /* domar: webOS 3 / 4: an HDR10 film's own mastering values and colour description are passed on to the TV's picture side (1, the default), or none are, as before (0); taken at the next film's start */
+/* domar (0056): the HDR10 film playing as the TV's player reports it: MaxCLL and the mastering display's peak in nits
+   (0 not given), and the stream's bit rate (0 not known). 1 while the TV says HDR10, else 0 */
+int    video_hdr10_levels(int *maxCll, int *mastMax, long *bits);
 #endif

@@ -62,6 +62,7 @@ VidPlaneCaps video_plane_caps(void) { VidPlaneCaps c = { 1, 0, 0, 0 }; const cha
 void video_set_window(float x, float y, float w, float h) { if (R()) av_window(x, y, w, h); static char last[96]; char t[96]; snprintf(t, sizeof t, "%.0f,%.0f %.0fx%.0f", x, y, w, h); if (strcmp(t, last)) { snprintf(last, sizeof last, "%s", t); fprintf(stderr, "[video] window %s\n", t); } }
 void video_ss_pump(void) {}
 void video_hdr_values(int on) { (void)on; }
+int video_hdr10_levels(int *maxCll, int *mastMax, long *bits) { *maxCll = *mastMax = 0; *bits = 0; return 0; } /* (domar: a webOS matter) */
 void video_pump(void) {
   if (R()) { av_pump(); return; }
   double now = SDL_GetTicks() / 1000.0;

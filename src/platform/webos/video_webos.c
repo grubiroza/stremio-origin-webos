@@ -484,6 +484,11 @@ int video_width(void) { return S.w; }
 int video_height(void) { return S.h; }
 double video_fps(void) { pthread_mutex_lock(&mu); double f = S.fps; pthread_mutex_unlock(&mu); return f; }
 int video_hdr(char *out, int cap) { pthread_mutex_lock(&mu); snprintf(out, (size_t)cap, "%s", S.hdr); pthread_mutex_unlock(&mu); return out[0] != 0; }
+int video_hdr10_levels(int *maxCll, int *mastMax, long *bits) { /* domar (0056): from videoInfo's "SEI" (mastering in 0.0001 nits) */
+  pthread_mutex_lock(&mu); int hdr10 = !strcasecmp(S.hdr, "HDR10"); double c = num_of(S.sei, "\"maxContentLightLevel\":"), m = num_of(S.sei, "\"maxDisplayMasteringLuminance\":"); long b = S.bits; pthread_mutex_unlock(&mu);
+  *maxCll = c > 0 && c < 20000 ? (int)c : 0; *mastMax = m > 0 ? (int)(m / 10000.0 + 0.5) : 0; if (*mastMax > 20000) *mastMax = 0; *bits = b > 0 ? b : 0;
+  return hdr10;
+}
 int video_audio_unsupported(void) { return S.audioUnsup; }
 int video_audio_tracks(VidTrack *out, int max) { pthread_mutex_lock(&mu); int n = S.naud < max ? S.naud : max; memcpy(out, S.aud, n * sizeof *out); pthread_mutex_unlock(&mu); return n; }
 int video_audio_current(void) { return S.curAud; }

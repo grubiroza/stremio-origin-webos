@@ -12,8 +12,9 @@ int hproxy_url(const char *url, const char *reqHdrs, const char *respHdrs, char 
    (libsbdts: video copied, a profile 7 picture as 8.1, the sound as Dolby Digital or as it is) and served as local HLS: /h/<id>/index.m3u8 and /h/<id>/<n>.ts, or, for a file without a keyframe index,
    one stream /h/<id>/all.ts?t=<seconds>. One conversion at a time; calls for the main thread (the work is on threads) */
 typedef struct { int indexed, outCh, dvIn, dvOut; double dur; char vcodec[16], path[96]; } HlsConvInfo;
-enum { HC_NOINDEX = 1, HC_DV81 = 2, HC_COPYAUDIO = 4 };          /* the file is known to have no Cues; profile 7 as 8.1; the audio track as it is */
+enum { HC_NOINDEX = 1, HC_DV81 = 2, HC_COPYAUDIO = 4, HC_FAKEDV = 8 }; /* the file is known to have no Cues; profile 7 as 8.1; the audio track as it is; domar: HDR10 shown as Dolby Vision (dvts.c) */
 int  hls_conv_available(void);                                  /* the converter library is installed */
+void hls_conv_dv(int maxCll, int mastMax, int level);          /* domar: for the next hls_conv_start with HC_FAKEDV: the film's HDR10 values (nits) and the Dolby Vision level */
 void hls_conv_start(const char *url, int audioOrd, int flags);  /* audioOrd among the file's audio tracks (-1 the first DTS / TrueHD) */
 int  hls_conv_poll(char *url, size_t cap, char *why, size_t whyCap, HlsConvInfo *info); /* 0 opening, 1 ready (url to load), -1 failed (why) */
 void hls_conv_stop(void);
