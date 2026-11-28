@@ -125,10 +125,15 @@ The same day, H.264 too: the C9 takes Dolby Vision profile 9 (an 8-bit AVC base 
 pattern sent as H.264 with the 8-bit RPU and as HEVC 10-bit with the profile 8 one gave the same screenshot within
 one code, so the TV reads the 8-bit pivots as meant.
 
+Interlaced H.264 on this TV, for anyone trying the same: a Blu-ray 1080i25 copy (MBAFF, picture timing with
+`ct_type` progressive) plays as profile 9; x264's interlaced (MBAFF) and fake-interlaced streams, with the same RPU,
+make the pipeline die ("1000 pipeline died abnormally"), with or without audio, and play fine without it.
+
 | Commit | What |
 |---|---|
 | [dedb6c6](https://github.com/grubiroza/stremio-origin-webos/commit/dedb6c61c97793dcea8150a8b0663bdbf0c758cf) | once the TV says the file plays as SDR (HEVC Main 10 in Matroska, no Dolby Vision of its own, at most 35 Mbit/s), the picture goes the HDR10 way above, with a static RPU that maps SDR (BT.709, gamma 2.4) into PQ: luma in 8 second-order pieces, chroma by third-order MMR fitted in ICtCp, BT.709 matrices and L9 (`dvsdr_rpu.h`); the descriptor marks the base layer SDR (compatibility 2). An RPU now spans as many TS packets as it needs. Settings > Playback > "Dolby Vision for SDR" (Off / On / Brighter; on); its own lesson (`dvSdrHls`); `tests/dvts` runs the filter on the PC |
 | [3a6cc05](https://github.com/grubiroza/stremio-origin-webos/commit/3a6cc05d41b99f5fa64b5b82d36a2d5b400afdcb) | the same for an H.264 film (8-bit 4:2:0 by its avcC, progressive), as Dolby Vision **profile 9** (AVC base layer, SDR): the RPU made for an 8-bit base (`DVS_SDR8`), carried in a NAL unit of type 28 with the same two-byte header 7C 01 (as Dolby's dlb_mp4base and GPAC know it), the PMT's H.264 entry marked with profile 9; its own lesson (`dvSdr9Hls`) |
+| [28805fb](https://github.com/grubiroza/stremio-origin-webos/commit/28805fb02396f56efef05a755e23d61c698fb4da) | after the first evening with real films: DTS is made Dolby Digital instead of copied (in the converted stream the TV saw no audio track at all); interlaced pictures are tried too (a Blu-ray 1080i25 copy plays with the RPU, x264's interlaced ones make the pipeline die: then the plain file, nothing learned); nothing is decided while the TV plays something else than the file (a debrid notice clip: its length against the Matroska Duration); error 600 behind another app is a pipeline to load again once back, not a failure (a paused film behind YouTube ended in "Playback error"); another audio track keeps the Dolby Vision of HDR10 / SDR |
 
 ## Local aids (not meant for upstream)
 
