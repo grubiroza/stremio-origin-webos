@@ -121,9 +121,14 @@ gives the intended nits on real frames) and then on an LG C9 (webOS 4.5): a 4K S
 `dynamicRange: dolbyHdr`, with the picture as the SDR one. Worth knowing for anyone making such RPUs: on this TV an RPU
 whose luma polynomial had a coefficient of 73.7 gave no picture at all, while dovi_tool's 8.4 RPU (up to 61.9) plays.
 
+The same day, H.264 too: the C9 takes Dolby Vision profile 9 (an 8-bit AVC base layer, SDR) from a TS stream. A test
+pattern sent as H.264 with the 8-bit RPU and as HEVC 10-bit with the profile 8 one gave the same screenshot within
+one code, so the TV reads the 8-bit pivots as meant.
+
 | Commit | What |
 |---|---|
 | [dedb6c6](https://github.com/grubiroza/stremio-origin-webos/commit/dedb6c61c97793dcea8150a8b0663bdbf0c758cf) | once the TV says the file plays as SDR (HEVC Main 10 in Matroska, no Dolby Vision of its own, at most 35 Mbit/s), the picture goes the HDR10 way above, with a static RPU that maps SDR (BT.709, gamma 2.4) into PQ: luma in 8 second-order pieces, chroma by third-order MMR fitted in ICtCp, BT.709 matrices and L9 (`dvsdr_rpu.h`); the descriptor marks the base layer SDR (compatibility 2). An RPU now spans as many TS packets as it needs. Settings > Playback > "Dolby Vision for SDR" (Off / On / Brighter; on); its own lesson (`dvSdrHls`); `tests/dvts` runs the filter on the PC |
+| [3a6cc05](https://github.com/grubiroza/stremio-origin-webos/commit/3a6cc05d41b99f5fa64b5b82d36a2d5b400afdcb) | the same for an H.264 film (8-bit 4:2:0 by its avcC, progressive), as Dolby Vision **profile 9** (AVC base layer, SDR): the RPU made for an 8-bit base (`DVS_SDR8`), carried in a NAL unit of type 28 with the same two-byte header 7C 01 (as Dolby's dlb_mp4base and GPAC know it), the PMT's H.264 entry marked with profile 9; its own lesson (`dvSdr9Hls`) |
 
 ## Local aids (not meant for upstream)
 
