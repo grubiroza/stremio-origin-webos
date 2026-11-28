@@ -1,8 +1,10 @@
 /* domar (0056): an HDR10 film shown as Dolby Vision, the TS side (dvts.h). Proven first by hand on this TV (LG C9,
    2026-11-27): an HDR10 clip with dovi_tool's static 8.1 RPU in each frame, through this app's converter, showed as
-   DolbyVision (dynamicRange dolbyHdr). */
+   DolbyVision (dynamicRange dolbyHdr). domar (0057): an SDR picture the same way, its RPU mapping SDR into PQ
+   (dvsdr_rpu.h) and the base layer marked SDR (compatibility 2); proven by hand on the same TV 2026-11-28. */
 #include "core/dvts.h"
 #include "core/dvstatic_rpu.h"
+#include "core/dvsdr_rpu.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,10 +12,12 @@
 #define TSP 188
 #define PEND_MAX (8 << 20)   /* a frame bigger than this goes out without its RPU (counted) */
 #define OBUF (64 * 1024)
+#define RPU_PK 3             /* TS packets one RPU may take (an SDR one, ~380 bytes, takes 3; an HDR10 one 1) */
 
 struct DvTs {
   dvts_out out; void *ud;
-  const DvsRpu *r; uint8_t desc[13]; int descLen;
+  const uint8_t *rk, *rn; int rkN, rnN; /* the RPU NAL units: a keyframe's (scene refresh), the frames' after it */
+  uint8_t desc[13]; int descLen;
   uint8_t part[TSP]; int partN;         /* a packet cut between two writes */
   int pmtPid, vidPid;                   /* -1 until the PAT / PMT say */
   uint8_t *pend; int pendN, pendCap;    /* the frame waiting for its end: its packets and those between them */
@@ -40,21 +44,32 @@ int dvts_level(int w, int h, double fps) { /* the smallest level whose pixel rat
   for (int i = 0; i < 10; i++) if (r <= R[i] * 1.001) return i + 1;
   return 10;
 }
-DvTs *dvts_new(int maxCll, int mastMax, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
+/* the same descriptors the converter writes for a real profile 8 picture: profile 8, the level, RPU and base layer
+   present, no enhancement layer, the base layer's compatibility (1 HDR10, 2 SDR) */
+static DvTs *dvts_make(const uint8_t *rk, int rkN, const uint8_t *rn, int rnN, int compat, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
   DvTs *f = calloc(1, sizeof *f); if (!f) return NULL;
   f->ob = malloc(OBUF); if (!f->ob) { free(f); return NULL; }
   f->out = out; f->ud = ud; f->lastVid = f->pesLen = -1; f->lastOut = -1;
   f->base = carry ? carry->base & 15 : 0; f->lastOrig = carry ? carry->lastOrig : -1; f->vidPid = carry ? carry->vidPid : -1; f->pmtPid = carry ? carry->pmtPid : -1;
-  int cll, mast; dvts_pick(maxCll, mastMax, &cll, &mast);
-  for (int i = 0; i < DVS_RPU_N; i++) if (DVS_RPU[i].mast == mast && DVS_RPU[i].cll == cll) f->r = &DVS_RPU[i];
-  if (!f->r) f->r = &DVS_RPU[2];
-  /* the same descriptors the converter writes for a real profile 8 picture: profile 8, the level, RPU and base layer
-     present, no enhancement layer, base layer compatible with HDR10 (1) */
+  f->rk = rk; f->rkN = rkN; f->rn = rn; f->rnN = rnN;
   unsigned v = 8u << 9 | (unsigned)(level & 0x3f) << 3 | 1u << 2 | 0u << 1 | 1u; int k = 0;
   f->desc[k++] = 0x05; f->desc[k++] = 4; f->desc[k++] = 'D'; f->desc[k++] = 'O'; f->desc[k++] = 'V'; f->desc[k++] = 'I';
-  f->desc[k++] = 0xB0; f->desc[k++] = 5; f->desc[k++] = 1; f->desc[k++] = 0; f->desc[k++] = (uint8_t)(v >> 8); f->desc[k++] = (uint8_t)v; f->desc[k++] = 1u << 4;
+  f->desc[k++] = 0xB0; f->desc[k++] = 5; f->desc[k++] = 1; f->desc[k++] = 0; f->desc[k++] = (uint8_t)(v >> 8); f->desc[k++] = (uint8_t)v; f->desc[k++] = (uint8_t)((compat & 15) << 4);
   f->descLen = k;
   return f;
+}
+DvTs *dvts_new(int maxCll, int mastMax, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
+  int cll, mast; dvts_pick(maxCll, mastMax, &cll, &mast); const DvsRpu *r = NULL;
+  for (int i = 0; i < DVS_RPU_N; i++) if (DVS_RPU[i].mast == mast && DVS_RPU[i].cll == cll) r = &DVS_RPU[i];
+  if (!r) r = &DVS_RPU[2];
+  return dvts_make(r->key, r->keyN, r->next, r->nextN, 1, level, carry, out, ud);
+}
+int dvts_sdr_preset(int bright, int *white, int *peak) { /* domar (0057): 0 white at 203 nits, 1 the highlights spread above it */
+  int i = bright > 0 && DVS_SDR_N > 1 ? 1 : 0; if (white) *white = DVS_SDR[i].white; if (peak) *peak = DVS_SDR[i].peak; return i;
+}
+DvTs *dvts_new_sdr(int bright, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
+  const DvsSdrRpu *r = &DVS_SDR[dvts_sdr_preset(bright, NULL, NULL)];
+  return dvts_make(r->key, r->keyN, r->next, r->nextN, 2, level, carry, out, ud);
 }
 void dvts_free(DvTs *f) { if (!f) return; free(f->pend); free(f->ob); free(f); }
 void dvts_stats(const DvTs *f, long *rpus, long *pmts, long *odd) { *rpus = f->rpus; *pmts = f->pmts; *odd = f->odd; }
@@ -114,28 +129,34 @@ static void pmt_fix(DvTs *f, uint8_t *t) {
 }
 
 /* ---- the frames ---- */
-static void rpu_packet(DvTs *f, uint8_t *t) { /* one TS packet: 00 00 01 + the RPU's NAL unit, the room before it stuffed */
-  const uint8_t *nal = f->key ? f->r->key : f->r->next; int nl = f->key ? f->r->keyN : f->r->nextN, pl = 3 + nl, af = 184 - pl;
-  t[0] = 0x47; t[1] = (uint8_t)((f->vidPid >> 8) & 0x1f); t[2] = (uint8_t)f->vidPid;
-  if (af > 0) { t[3] = 0x30; t[4] = (uint8_t)(af - 1); if (af > 1) { t[5] = 0x00; memset(t + 6, 0xff, (size_t)(af - 2)); } } else t[3] = 0x10;
-  uint8_t *p = t + 4 + (af > 0 ? af : 0); p[0] = 0; p[1] = 0; p[2] = 1; memcpy(p + 3, nal, (size_t)nl);
+static int rpu_npk(const DvTs *f) { int nl = f->key ? f->rkN : f->rnN; return (3 + nl + 183) / 184; }
+/* the RPU as TS packets of the frame's PES (no new start): 00 00 01 + its NAL unit, the room left over stuffed in the
+   first packet's adaptation field (0057: an SDR RPU takes 3 packets; until then one always did) */
+static void rpu_packets(DvTs *f, uint8_t *t) {
+  const uint8_t *nal = f->key ? f->rk : f->rn; int nl = f->key ? f->rkN : f->rnN, np = rpu_npk(f), af = np * 184 - (3 + nl), done = -3;
+  for (int k = 0; k < np; k++, t += TSP) {
+    t[0] = 0x47; t[1] = (uint8_t)((f->vidPid >> 8) & 0x1f); t[2] = (uint8_t)f->vidPid; int a = k == 0 ? af : 0;
+    if (a > 0) { t[3] = 0x30; t[4] = (uint8_t)(a - 1); if (a > 1) { t[5] = 0x00; memset(t + 6, 0xff, (size_t)(a - 2)); } } else t[3] = 0x10;
+    for (int i = 4 + a; i < TSP; i++, done++) t[i] = done < 0 ? (done == -1 ? 1 : 0) : nal[done]; }
 }
-static int pend_add(DvTs *f, const uint8_t *t) {
-  if (f->pendN + 2 * TSP > f->pendCap) { int nc = f->pendCap ? f->pendCap * 2 : 256 * 1024; if (nc > PEND_MAX + 2 * TSP) nc = PEND_MAX + 2 * TSP;
-    if (f->pendN + 2 * TSP > nc) return -1; uint8_t *np = realloc(f->pend, (size_t)nc); if (!np) return -1; f->pend = np; f->pendCap = nc; }
+static int pend_add(DvTs *f, const uint8_t *t) { /* (room kept for the RPU's packets) */
+  int spare = (1 + RPU_PK) * TSP;
+  if (f->pendN + spare > f->pendCap) { int nc = f->pendCap ? f->pendCap * 2 : 256 * 1024; if (nc > PEND_MAX + spare) nc = PEND_MAX + spare;
+    if (f->pendN + spare > nc) return -1; uint8_t *np = realloc(f->pend, (size_t)nc); if (!np) return -1; f->pend = np; f->pendCap = nc; }
   memcpy(f->pend + f->pendN, t, TSP); f->pendN += TSP; return 0;
 }
 static int flush_frame(DvTs *f) { /* the waiting frame out, its RPU right after its last video packet */
   if (!f->pendN) { f->open = 0; return 0; }
-  int ins = f->open && f->lastVid >= 0 && f->vidPid >= 0, n = f->pendN, after = -1;
+  int ins = f->open && f->lastVid >= 0 && f->vidPid >= 0 && rpu_npk(f) <= RPU_PK, n = f->pendN, after = -1, end = -1;
   if (ins) {
-    after = f->lastVid + TSP; memmove(f->pend + after + TSP, f->pend + after, (size_t)(f->pendN - after)); rpu_packet(f, f->pend + after); n += TSP;
+    int add = rpu_npk(f) * TSP;
+    after = f->lastVid + TSP; end = after + add; memmove(f->pend + end, f->pend + after, (size_t)(f->pendN - after)); rpu_packets(f, f->pend + after); n += add;
     if (f->pesLen >= 0) { int l = f->pend[f->pesLen] << 8 | f->pend[f->pesLen + 1];
-      if (l) { l += 3 + (f->key ? f->r->keyN : f->r->nextN); if (l > 0xFFFF) l = 0; f->pend[f->pesLen] = (uint8_t)(l >> 8); f->pend[f->pesLen + 1] = (uint8_t)l; } }
+      if (l) { l += 3 + (f->key ? f->rkN : f->rnN); if (l > 0xFFFF) l = 0; f->pend[f->pesLen] = (uint8_t)(l >> 8); f->pend[f->pesLen + 1] = (uint8_t)l; } }
     f->rpus++;
   }
   for (int off = 0; off < n; off += TSP) { uint8_t *t = f->pend + off;
-    if (off == after) { f->lastOut = (f->lastOut + 1) & 15; t[3] = (uint8_t)((t[3] & 0xf0) | f->lastOut); f->base = (f->base + 1) & 15; continue; } /* (the added packet: the next number, and every later one one further) */
+    if (off >= after && off < end) { f->lastOut = (f->lastOut + 1) & 15; t[3] = (uint8_t)((t[3] & 0xf0) | f->lastOut); f->base = (f->base + 1) & 15; continue; } /* (an added packet: the next number, and every later one one further) */
     if ((((t[1] & 0x1f) << 8) | t[2]) == f->vidPid) vid_cc(f, t); }
   f->pendN = 0; f->open = 0; f->lastVid = f->pesLen = -1; f->key = 0;
   return oput(f, f->pend, n);

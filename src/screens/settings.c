@@ -79,7 +79,7 @@ static const Opt SS_OPTS[] = { { "0", "Off" }, { "1", "1 min" }, { "2", "2 min" 
 static const Opt ACCENT_OPTS[] = { { "logo", "From the logo" }, { "adaptive", "From the artwork" }, { "purple", "Purple" }, { "violet", "Violet" }, { "fuchsia", "Fuchsia" }, { "pink", "Pink" }, { "rose", "Rose" }, { "red", "Red" }, { "orange", "Orange" }, { "amber", "Amber" }, { "gold", "Gold" }, { "lime", "Lime" }, { "green", "Green" }, { "emerald", "Emerald" }, { "teal", "Teal" }, { "cyan", "Cyan" }, { "sky", "Sky" }, { "blue", "Blue" }, { "indigo", "Indigo" }, { "graphite", "Graphite" } };
 #define NCAT 11
 #define MAXROWS 48
-static Setting playBase[16], playS[11], seekS[6], subsS[13], audS[4], lookS[6], langS[44], langOpt, keyS[4], traktS[6], addonS[40], acctS[1], supS[10];
+static Setting playBase[17], playS[12], seekS[6], subsS[13], audS[4], lookS[6], langS[44], langOpt, keyS[4], traktS[6], addonS[40], acctS[1], supS[10];
 static Cat cats[NCAT]; static int ncat; /* (Keys leaves when this build carries every key) */
 
 /* the layout, in the web's pixels: the grid is centred, 1600 wide, 150 from the top */
@@ -203,7 +203,7 @@ static unsigned usbSeen;
 static void set_count(const Setting *opts, int n) { for (int i = 0; i < ncat; i++) if (cats[i].opts == opts) { cats[i].n = n; if (S.cat == i && S.idx >= n) S.idx = n > 0 ? n - 1 : 0; } }
 static void play_layout(void) {
   int on = strcmp(store_get("bgTrailer", "true"), "false") != 0, n = 0;
-  playS[n++] = playBase[4]; playS[n++] = playBase[1]; playS[n++] = playBase[12]; playS[n++] = playBase[8]; playS[n++] = playBase[2]; { const TvCaps *tc = best_caps(); if (tc && tc->dv) playS[n++] = playBase[7]; if (tc && tc->dv) playS[n++] = playBase[15]; if (tc && tc->hdr) playS[n++] = playBase[14]; } /* (domar: the HDR10 values row, on a TV that shows HDR; HDR10 as Dolby Vision, on one with Dolby Vision) */
+  playS[n++] = playBase[4]; playS[n++] = playBase[1]; playS[n++] = playBase[12]; playS[n++] = playBase[8]; playS[n++] = playBase[2]; { const TvCaps *tc = best_caps(); if (tc && tc->dv) playS[n++] = playBase[7]; if (tc && tc->dv) playS[n++] = playBase[15]; if (tc && tc->dv) playS[n++] = playBase[16]; if (tc && tc->hdr) playS[n++] = playBase[14]; } /* (domar: the HDR10 values row, on a TV that shows HDR; HDR10 as Dolby Vision, on one with Dolby Vision) */
   playS[n++] = playBase[13]; /* torrents: how they connect, then their USB cache, last */
   iUsb = n; playS[n++] = playBase[5]; /* the USB cache, last */
   set_count(playS, n);
@@ -238,6 +238,8 @@ static void build(void) {
   set_s(&playBase[4], "autoBest", "Play the best stream automatically", "", OO, 2, "false");
   set_s(&playBase[7], "dv7Convert", "Dolby Vision for Blu-ray copies", "Their picture is converted on this TV so it shows in Dolby Vision, not HDR10", OO, 2, "true");
   set_s(&playBase[15], "dvHdr10", "Dolby Vision for HDR10", "HDR10 films are shown in Dolby Vision, with fixed values from the film. Off: HDR10. From the next film on", OO, 2, "true"); /* domar (0056): dvhdr_convert, dvts.c */
+  { static const Opt DS[] = { { "off", "Off" }, { "on", "On" }, { "bright", "Brighter" } }; /* domar (0057): dvsdr_convert, dvts.c, dvsdr_rpu.h */
+    set_s(&playBase[16], "dvSdr", "Dolby Vision for SDR", "SDR films (HEVC 10-bit) in Dolby Vision, white at 203 nits. Brighter: their highlights lifted. From the next film on", DS, 3, "on"); }
   set_s(&playBase[14], "hdrOwn", "HDR10 values of the film", "The TV is told the film\xe2\x80\x99s own brightness values. Off: none, as before. From the next film on", OO, 2, "true"); /* domar: video_hdr_values (webOS 3 / 4) */
   set_s(&playBase[6], "bgTrailerVol", "Volume", "The sound comes up softly to this level", SVOL, 10, "70"); playBase[6].sub = 1; /* (shown right under the trailers while they are on: play_layout; drawn as theirs, set in) */
   usb_row();

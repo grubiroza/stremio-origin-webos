@@ -15,6 +15,7 @@ typedef struct { int indexed, outCh, dvIn, dvOut; double dur; char vcodec[16], p
 enum { HC_NOINDEX = 1, HC_DV81 = 2, HC_COPYAUDIO = 4, HC_FAKEDV = 8 }; /* the file is known to have no Cues; profile 7 as 8.1; the audio track as it is; domar: HDR10 shown as Dolby Vision (dvts.c) */
 int  hls_conv_available(void);                                  /* the converter library is installed */
 void hls_conv_dv(int maxCll, int mastMax, int level);          /* domar: for the next hls_conv_start with HC_FAKEDV: the film's HDR10 values (nits) and the Dolby Vision level */
+void hls_conv_dvsdr(int bright, int level);                     /* domar (0057): for the next hls_conv_start with HC_FAKEDV: an SDR picture (bright: dvts_new_sdr) */
 void hls_conv_start(const char *url, int audioOrd, int flags);  /* audioOrd among the file's audio tracks (-1 the first DTS / TrueHD) */
 int  hls_conv_poll(char *url, size_t cap, char *why, size_t whyCap, HlsConvInfo *info); /* 0 opening, 1 ready (url to load), -1 failed (why) */
 void hls_conv_stop(void);

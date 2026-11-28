@@ -14,6 +14,10 @@ typedef struct { int base, lastOrig, vidPid, pmtPid; } DvtsCarry;
 #define DVTS_CARRY0 { 0, -1, -1, -1 }
 /* maxCll / mastMax in nits (0 not known); level the Dolby Vision level for the descriptor */
 DvTs *dvts_new(int maxCll, int mastMax, int level, const DvtsCarry *carry, dvts_out out, void *ud);
+/* domar (0057): an SDR picture (BT.709, HEVC Main 10) as Dolby Vision: its RPU maps SDR into PQ (dvsdr_rpu.h), the
+   descriptor says the base layer is SDR (compatibility 2); bright 0 white at 203 nits, 1 the highlights spread above */
+DvTs *dvts_new_sdr(int bright, int level, const DvtsCarry *carry, dvts_out out, void *ud);
+int   dvts_sdr_preset(int bright, int *white, int *peak);          /* the preset it takes and its white / peak (nits, for the log) */
 int   dvts_write(void *f, const unsigned char *p, int n);          /* the converter's writer: n, or < 0 to stop */
 int   dvts_flush(DvTs *f);                                         /* the last frame and whatever waits: 0, < 0 failed */
 void  dvts_stats(const DvTs *f, long *rpus, long *pmts, long *odd);/* RPUs added, PMTs marked, packets passed as they were */

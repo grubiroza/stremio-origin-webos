@@ -1160,6 +1160,39 @@ static int dvhdr_convert(void) {
           cll, mast, bits / 1e6, pc, pm, level, ord, copy ? "copied" : "as Dolby Digital", P.dts.convAt);
   return 1;
 }
+/* domar (0057): an SDR film shown as Dolby Vision (Settings > Playback > "Dolby Vision for SDR": Off / On / Brighter).
+   Once the TV says the file plays as SDR ("none"), an HEVC Main 10 picture in Matroska with no Dolby Vision of its own
+   goes the HDR10 way above, its RPU mapping the SDR signal (BT.709, gamma 2.4) into PQ: white at 203 nits, Brighter
+   spreads the highlights above it up to ~500 (dvsdr_rpu.h). The descriptor says the base layer is SDR. Not for 8-bit
+   (profile 8 wants a 10-bit base) nor H.264 (profile 9, not tried here); its own lesson ("dvSdrHls"). Proven by hand on
+   this TV (LG C9) 2026-11-28: a 4K SDR clip with such an RPU showed as DolbyVision, dynamicRange dolbyHdr */
+static int hevc_main10(void) { /* the Matroska video's hvcC says 10-bit luma: 1, else 0 */
+  char vc[32]; unsigned char *pr = NULL; long pl = 0; int r = 0;
+  if (mkv_video_track(mkv, vc, sizeof vc, &pr, &pl) >= 0 && strstr(vc, "HEVC") && pr && pl > 22 && pr[0] == 1) r = (pr[17] & 7) == 2;
+  free(pr); return r;
+}
+static int dvsdr_convert(void) {
+  if (P.dts.conv || P.dts.dvTried || P.dts.fakeTried || P.isTrailer || P.isHls || strncmp(P.url, "http", 4) || !mkv_listed(mkv)) return 0;
+  char h[32]; int cll = 0, mast = 0; long bits = 0;
+  if (video_state() != VID_PLAYING || !video_hdr(h, sizeof h) || strcasecmp(h, "none")) return 0; /* (waits for the TV's word on the picture: SDR only) */
+  video_hdr10_levels(&cll, &mast, &bits);
+  P.dts.fakeTried = 1;
+  const char *mode = store_get("dvSdr", "on"); if (!strcmp(mode, "off") || !hls_conv_available()) return 0;
+  const TvCaps *tc = best_caps(); if (!tc || !tc->dv) return 0;
+  if (best_learned("hlsHevcOk") == 0 || best_learned("dv81Hls") == 0 || best_learned("dvSdrHls") == 0) { fprintf(stderr, "[dv] SDR: not shown as Dolby Vision here (this TV has shown before it doesn't take it)\n"); return 0; }
+  int el = 0; if (mkv_dovi(mkv, &el) != 0) return 0;
+  if (!hevc_main10()) { fprintf(stderr, "[dv] SDR, but not HEVC 10-bit: played as SDR\n"); return 0; }
+  if (bits > DVHDR_MAX_BITS) { fprintf(stderr, "[dv] SDR at %.0f Mbit/s: more than this TV converts, played as SDR\n", bits / 1e6); return 0; }
+  int copy = 1, ord = dv7_audio(&copy);
+  if (ord < 0) { fprintf(stderr, "[dv] SDR, but no audio track can go with it: played as SDR\n"); return 0; }
+  int bright = !strcmp(mode, "bright"), level = dvts_level(video_width(), video_height(), video_fps()), white, peak; dvts_sdr_preset(bright, &white, &peak);
+  hls_conv_dvsdr(bright, level);
+  P.dts.conv = 1; P.dts.convOrd = ord; P.dts.dv = 8; P.dts.fake = 2; P.dts.dvTried = 1; P.dts.copyA = copy; P.dts.hevc = 1; P.dts.convT0 = now_(); P.dts.convAt = P.live ? video_time() : P.startAt;
+  hls_conv_start(P.url, ord, (mkv_has_index(mkv) == 0 ? HC_NOINDEX : 0) | (copy ? HC_COPYAUDIO : 0) | HC_FAKEDV);
+  fprintf(stderr, "[dv] SDR (HEVC 10-bit, %.1f Mbit/s): shown as Dolby Vision 8, SDR base, white %d nits%s, level %d, audio track %d %s, from %.0f s\n",
+          bits / 1e6, white, peak > white ? ", highlights up to ~500" : "", level, ord, copy ? "copied" : "as Dolby Digital", P.dts.convAt);
+  return 1;
+}
 /* A stream whose text says Dolby Vision from a Blu-ray (a remux, FEL / MEL) or in a Matroska file, on a TV with Dolby Vision:
    the first load waits for the file's head (a moment), so its picture starts converted instead of switching after a second */
 static int dv7_defer_wanted(void) {
@@ -1200,7 +1233,8 @@ static void dts_conv_tick(void) {
     if (video_state() == VID_PLAYING && video_live()) { if (!P.dts.dvAt) P.dts.dvAt = now_();
       else if (now_() - P.dts.dvAt >= 3) { char h[32]; if (video_hdr(h, sizeof h)) { P.dts.dvSeen = 1; int yes = strcasestr(h, "dolby") != NULL;
           fprintf(stderr, "[dv] the TV shows the converted picture as %s\n", h);
-          if (P.dts.fake) { if (!yes && best_learned("dvHdrHls") == 1) fprintf(stderr, "[dv] HDR10 as Dolby Vision has shown here before: this file's trouble, the lesson kept\n"); else best_learn("dvHdrHls", yes); } /* domar (0056): its own lesson; never the real profile 8's */
+          if (P.dts.fake) { const char *fk = P.dts.fake == 2 ? "dvSdrHls" : "dvHdrHls"; /* domar (0056, 0057 SDR): its own lesson; never the real profile 8's */
+            if (!yes && best_learned(fk) == 1) fprintf(stderr, "[dv] %s as Dolby Vision has shown here before: this file's trouble, the lesson kept\n", P.dts.fake == 2 ? "SDR" : "HDR10"); else best_learn(fk, yes); }
           else if (!yes && P.dts.dv == 5 && best_learned("dv5Hls") == 1) fprintf(stderr, "[dv] profile 5 has shown as Dolby Vision here before: this file's trouble, the lesson kept\n"); /* domar: one odd file (its metadata, the TV's first word) turned the lesson off for good, and every profile 5 film after it played washed out and green, as when nothing converted it */
           else if (yes || strcasestr(h, "hdr") || P.dts.dv == 5) best_learn(dv_key(P.dts.dv), yes); } /* (profile 5 shown as anything else, "none" too: converting it brings nothing here) */
         else if (now_() - P.dts.dvAt >= 15) P.dts.dvSeen = 1; } } /* (this TV doesn't say) */
@@ -1210,7 +1244,7 @@ static void dts_conv_failed(const char *why) { /* the converted stream didn't pl
   fprintf(stderr, "[dts] the converted stream didn't play (%s)\n", why);
   video_unload(); /* first: the TV let go of the stream, so what it still asks of it (gone once the run stops) is not taken for this attempt's error */
   if (P.dts.dv) { /* the converted picture: not converted again on this TV; from here the file as it is, or (DTS) the sound alone converted */
-    { const char *k = P.dts.fake ? "dvHdrHls" : dv_key(P.dts.dv); /* domar (0056): HDR10 shown as Dolby Vision has its own lesson */
+    { const char *k = P.dts.fake == 2 ? "dvSdrHls" : P.dts.fake ? "dvHdrHls" : dv_key(P.dts.dv); /* domar (0056): HDR10 shown as Dolby Vision has its own lesson; 0057: SDR too */
       if (best_learned(k) != 1) best_learn(k, 0); } /* (a TV that has shown the converted picture as Dolby Vision: this film's trouble, not the TV's; tried again next time) */
     hls_conv_stop(); P.dts.dv = 0; P.dts.fake = 0;
     double at = P.lastPos > 1 ? P.lastPos : P.dts.convAt; P.startAt = at > 1 ? at : P.startAt; P.live = 0; P.liveT0 = 0; P.didResume = 0; P.curAud = -1;
@@ -1228,6 +1262,7 @@ static void dts_tick(void) {
   if (P.dts.conv) { dts_conv_tick(); return; }
   if (!P.dts.dvTried && mkv_listed(mkv) && dv7_convert("read in the file's head")) return;
   if (dvhdr_convert()) return; /* domar (0056) */
+  if (dvsdr_convert()) return; /* domar (0057) */
   if (P.isTrailer || P.dts.gaveUp) return;
   VidTrack ts[16]; int n = aud_list(ts, 16); if (!n) return; /* only after the TV listed them: choosing earlier stalls it */
   int cur = P.curAud >= 0 ? P.curAud : video_audio_current(), ci = 0; for (int i = 0; i < n; i++) if (ts[i].idx == cur) ci = i;

@@ -182,9 +182,10 @@ static int rss_mb(void) {
 #endif
 }
 typedef struct Conv { unsigned id; int ord, flags, state, refs, running; volatile int stop, dead; char err[160]; Reader rd; SbdSrc *src; sbd_info info; pthread_mutex_t runMu; double t0;
-  int fakeDv, dvCll, dvMast, dvLevel; DvtsCarry dvCarry; } Conv; /* domar: HDR10 shown as Dolby Vision (dvts.c): its values, and what one segment hands the next */
-static int dvCll_, dvMast_, dvLevel_ = 6;
-void hls_conv_dv(int maxCll, int mastMax, int level) { dvCll_ = maxCll; dvMast_ = mastMax; dvLevel_ = level; }
+  int fakeDv, dvCll, dvMast, dvLevel, dvSdr; DvtsCarry dvCarry; } Conv; /* domar: HDR10 shown as Dolby Vision (dvts.c): its values, and what one segment hands the next; 0057: dvSdr 1 / 2 an SDR picture (preset + 1) */
+static int dvCll_, dvMast_, dvLevel_ = 6, dvSdr_;
+void hls_conv_dv(int maxCll, int mastMax, int level) { dvCll_ = maxCll; dvMast_ = mastMax; dvLevel_ = level; dvSdr_ = 0; }
+void hls_conv_dvsdr(int bright, int level) { dvSdr_ = 1 + (bright > 0); dvLevel_ = level; dvCll_ = dvMast_ = 0; } /* domar (0057) */
 static Conv *conv; static unsigned convN; /* the current one, under mu */
 static void conv_unref(Conv *c) { /* the last holder frees it (the run in progress, the opening thread, the current slot) */
   pthread_mutex_lock(&mu); int last = --c->refs == 0; pthread_mutex_unlock(&mu); if (!last) return;
@@ -210,7 +211,7 @@ void hls_conv_start(const char *url, int audioOrd, int flags) {
   hls_conv_stop();
   Conv *c = calloc(1, sizeof *c); if (!c) return;
   snprintf(c->rd.url, sizeof c->rd.url, "%s", url); c->rd.size = -1; c->running = -100; c->ord = audioOrd; c->flags = (flags & HC_NOINDEX ? SBD_NOINDEX : 0) | (flags & HC_DV81 ? SBD_DV81 : 0) | (flags & HC_COPYAUDIO ? SBD_COPYAUDIO : 0); c->refs = 2; c->t0 = mono_s(); pthread_mutex_init(&c->runMu, NULL);
-  if (flags & HC_FAKEDV) { DvtsCarry z = DVTS_CARRY0; c->fakeDv = 1; c->dvCll = dvCll_; c->dvMast = dvMast_; c->dvLevel = dvLevel_; c->dvCarry = z; } /* domar */
+  if (flags & HC_FAKEDV) { DvtsCarry z = DVTS_CARRY0; c->fakeDv = 1; c->dvCll = dvCll_; c->dvMast = dvMast_; c->dvLevel = dvLevel_; c->dvSdr = dvSdr_; c->dvCarry = z; } /* domar */
   if (!start()) { c->state = -1; snprintf(c->err, sizeof c->err, "no local server"); }
   pthread_mutex_lock(&mu); c->id = ++convN; conv = c; pthread_mutex_unlock(&mu);
   if (c->state < 0) { conv_unref(c); return; }
@@ -261,7 +262,7 @@ static void conv_serve(int fd, unsigned id, const char *path, int head) {
     sbd_stats st; char err[160] = ""; c->rd.stop = &c->stop;
     /* domar: HDR10 shown as Dolby Vision: the converter's TS goes through dvts on its way (an RPU in each frame, the PMT
        marked); the runs of one conversion hand each other the continuity counter (dvts.h) */
-    DvTs *dt = c->fakeDv ? dvts_new(c->dvCll, c->dvMast, c->dvLevel, &c->dvCarry, fd_write, &fd) : NULL;
+    DvTs *dt = !c->fakeDv ? NULL : c->dvSdr ? dvts_new_sdr(c->dvSdr - 1, c->dvLevel, &c->dvCarry, fd_write, &fd) : dvts_new(c->dvCll, c->dvMast, c->dvLevel, &c->dvCarry, fd_write, &fd);
     int r = D->run(c->src, seg, from, dt ? dvts_write : fd_write, dt ? (void *)dt : (void *)&fd, &c->stop, &st, err, sizeof err);
     if (dt) { if (r == 0 && dvts_flush(dt) < 0) r = -1; long ra, pa, oa; dvts_stats(dt, &ra, &pa, &oa); dvts_carry(dt, &c->dvCarry);
       if (seg <= 0 || oa || (r == 0 && !ra)) fprintf(stderr, "[dv] segment %d: %ld static RPUs added, %ld PMTs marked%s\n", seg, ra, pa, oa ? ", some packets passed as they were" : "");
