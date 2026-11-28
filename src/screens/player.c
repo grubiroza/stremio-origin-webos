@@ -171,7 +171,7 @@ static struct {
     int fake, fakeTried; } dts; /* dv: the Dolby Vision profile going through (7 as 8.1; 8, 5 as they are), 0 none; domar: fake, an HDR10 picture going out as 8.1 (dvhdr_convert), fakeTried decided once; 0057: 2 an SDR one as 8 (HEVC); 0060: 3 as 9 (H.264) */
   struct { double s; char nm[96]; } chap[64]; int nchap; int chLast; double chAt; int chapGen, mp4Asked; double chapReadyAt; /* the file's chapters (nm "" when only numbered); the one the pill last named, when it changed */
   int epState; double played, playTick, pzSince; /* the series' place: 0 not decided, 1 this episode is it, 2 an earlier one (it becomes the place once watched a while), 3 a special (never); played: seconds really watched */
-  int assPlain; /* styled subtitles were too slow here: plain for the rest of this film */ double lastSave; int marked; char aspect[8]; const char *res; char infoKey[256]; int pausedShown; double pausedAt;
+  int assPlain; /* styled subtitles were too slow here: plain for the rest of this film */ double lastSave; int marked; char aspect[8]; const char *res; char infoKey[256]; int pausedShown, pzHidden; double pausedAt; /* domar (0064): pzHidden, the paused controls and shade put away by Back */
   /* torrents: resolved by the engine first; the file's own subtitles and chapters from the stream itself */
   int isP2p, resolving; double posTick; int mkvTracksOk, chapWant;
   Nudge nudge; double nameAt;
@@ -1493,11 +1493,15 @@ static int btn_index(const char *id) { for (int i = 0; i < P.nbtn; i++) if (!str
 static void arm_hide(void) { P.hideAt = now_() + 5; }
 static void chips_in(void);
 static void show_osd(int keepFocus) {
+  P.pzHidden = 0; /* domar (0064) */
   if (P.mode == 0) { P.mode = 1; if (!keepFocus) { P.row = 0; P.bIdx = 0; } }
   int was = P.osd; P.skm = 0; P.osd = 1; arm_hide();
   if (!was) chips_in(); /* the info chips come in again, one after the other */
 }
 static void hide_osd(void) { P.mode = 0; P.osd = 0; extern void app_pointer_rest(void); app_pointer_rest(); }
+/* domar (0064): Back puts the controls away, paused too (the picture alone, without the shade and "Paused"); the next
+   Back leaves the film. Upstream a paused film's Back left at once, and a menu's Back left the controls up for 5 s */
+static void osd_away(void) { hide_osd(); if (paused()) P.pzHidden = 1; }
 /* playing again: a live broadcast paused more than 3 s joins where the broadcast is now (it went on from the paused
    moment, no longer live); anything else goes on from where it stopped */
 static void play_on(void) { awayHold = 0; /* (asked to play: a phone's, behind, too) */ if (live_bcast() && P.pzSince > 0 && now_() - P.pzSince > 3) { P.pzSince = 0; video_live_rejoin(); } else video_play(); }
@@ -2058,11 +2062,10 @@ static void dly_open(void);
 static void pos_open(void);
 static void style_open(int kind);
 static void close_tray(void) { HV.kind = 0; HF.kind = 0; if (P.tray.kind == 4) subTab = P.tray.tab; P.mode = 1; P.tray.kind = -P.tray.kind; tray_origin(); arm_hide(); }
-static void tray_back(void) {
-  if (P.tray.onBtn) { close_tray(); return; }
-  if (P.tray.zone == 1 && P.tray.idx >= 0) { P.tray.zone = 0; return; }
+static void tray_back(void) { /* domar (0064): Back puts the menu away at once, from its tabs or its list, and the controls with it (upstream: from the tabs the focus went down to the list, and a closed menu left the controls up for 5 s) */
+  if (P.tray.onBtn) { close_tray(); osd_away(); return; }
   if (P.tray.kind == 5) { srcs_free(); P.tray.kind = 1; P.tray.tab = P.tray.backTab; P.tray.season = P.tray.seasonList[P.tray.tab]; P.tray.zone = 0; render_tray(1); P.tray.idx = P.tray.backIdx; return; }
-  close_tray();
+  close_tray(); osd_away();
 }
 static void adjust(const char *k) {
   if (!strcmp(k, "size")) size_set((size_idx() + 1) % SUBSZ_N);
@@ -2211,7 +2214,7 @@ static void back(void) {
   if (P.prompt.k && P.prompt.autoN) { P.prompt.autoN = 0; paint_prompt(); return; } /* a countdown running (skip, next episode): Back stops it, the controls up or not; the prompt stays */
   if (P.mode == 3) { dismiss_prompt(); return; }
   if (P.seekT >= 0) { cancel_seek(); return; }
-  if (P.mode == 1 && !paused()) { hide_osd(); return; }
+  if (P.mode == 1) { osd_away(); return; } /* domar (0064): paused too; then the next Back leaves */
   close_player(0, 0);
 }
 static void ss_exit(void) { P.ssOn = 0; P.lastAct = now_(); }
@@ -2715,7 +2718,7 @@ static void pg_ask(void) { if (P.pg.asked || P.isTrailer || strncmp(P.id, "tt", 
   parental_get(P.id, on_pg, (void *)(uintptr_t)P.pg.sess); rating_get(P.type, P.id, on_age, (void *)(uintptr_t)P.pg.sess); }
 /* the page's classes, as targets: each motion goes there with the duration, curve and delay the page gives that state */
 static void css(void) {
-  int tr = P.mode == 2 && P.tray.kind > 0, ss = P.ssOn, osd = P.osd && !ss, pz = P.pausedShown, skm = P.skm && !osd;
+  int tr = P.mode == 2 && P.tray.kind > 0, ss = P.ssOn, osd = P.osd && !ss, pz = P.pausedShown && !P.pzHidden, skm = P.skm && !osd; /* domar (0064): pzHidden */
   if (osd && !tr) { mo_to(&P.ttlA, 1, .42f, C_OUT, 0); mo_to(&P.ttlX, 0, .42f, C_OUT, 0); mo_to(&P.ttlY, 0, .42f, C_OUT, 0); }
   else if (osd) { mo_to(&P.ttlA, 0, .42f, C_OUT, 0); mo_to(&P.ttlX, 0, .42f, C_OUT, 0); mo_to(&P.ttlY, 10, .42f, C_OUT, 0); } /* a tray takes its place: it sinks a little */
   else { mo_to(&P.ttlA, 0, .2f, C_EASE, 0); mo_to(&P.ttlX, -30, .2f, C_EASE, 0); mo_to(&P.ttlY, 0, .2f, C_EASE, 0); }
@@ -2889,8 +2892,9 @@ void player_tick(float dt) {
     if (P.ssOn && !paused()) ss_exit();
     /* (the player has no screensaver of its own any more: the app's one comes over a paused film) */
     if (paused()) { if (!P.pzSince) P.pzSince = now_(); } else P.pzSince = 0; /* (how long it has been paused, any way) */
-    int pz = paused() && P.mode != 2 && !P.pw.on; if (pz && !P.pausedShown) { if (!P.pausedAt) P.pausedAt = now_(); if (now_() - P.pausedAt > 0.35) { P.pausedShown = 1; show_osd(1); } }
+    int pz = paused() && P.mode != 2 && !P.pw.on; if (pz && !P.pausedShown) { if (!P.pausedAt) P.pausedAt = now_(); if (now_() - P.pausedAt > 0.35) { P.pausedShown = 1; if (!P.pzHidden) show_osd(1); } }
     else if (!pz) { P.pausedAt = 0; P.pausedShown = 0; }
+    if (!paused()) P.pzHidden = 0; /* domar (0064) */
     if (P.seekT >= 0 && now_() >= P.seekCommitAt) commit_seek();
     if (P.seekSnapAt) { static int stalled; double tn = now_(); /* (SB_SEEKSNAP: a committed seek's time to playing again, its picture there) */
       if (vs != VID_PLAYING) stalled = 1;
