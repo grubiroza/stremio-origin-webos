@@ -27,6 +27,7 @@ int  mkv_audio_tracks(MkvSession *s, MkvAudio *out, int max);  /* once listed: c
 int  mkv_video_codec(MkvSession *s, char *out, int cap);
 int  mkv_dovi(MkvSession *s, int *el);               /* once listed: the first video track's Dolby Vision profile (0 none; *el: an enhancement layer), -1 not known yet */
 int  mkv_has_index(MkvSession *s);
+double mkv_duration(MkvSession *s);                  /* domar (0062): once listed, the Segment's Duration in seconds; 0 not known */
 /* styled ASS: mkv_style keeps track n's events as the file has them (its lines read so far are read again); new ones
    come from mkv_events_since (cursor starts at 0; fn is called under the session's lock: quick), the script header from
    mkv_track_header (malloc'd, NULL none); the Attachments element (fonts) is at mkv_attachments_at (-1 none) */

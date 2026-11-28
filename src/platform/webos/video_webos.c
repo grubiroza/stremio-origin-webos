@@ -302,6 +302,7 @@ static bool on_event(LSHandle *h, LSMessage *m, void *ctx) {
     double code = num_of(p, "\"errorCode\":"); char txt[96]; str_in(p, NULL, "\"errorText\":\"", txt, sizeof txt);
     if (code == 200) S.audioUnsup = 1;                                        /* the picture goes on without this audio */
     else if (strstr(p, "is not running")) S.died = 1;                         /* the pipeline died: loaded again by video_pump */
+    else if (code == 600 && app_behind()) S.died = 1;                         /* domar (0062): "VDEC / ADEC_BANDWIDTH resource is released by policy action": the app in front took the decoder. The same as a pipeline that died (loaded again once back), not a failure: 2026-11-28 a paused film behind YouTube ended in "Playback error", a converted one fell back to the plain file */
     else if (strstr(p, "seek Failure") || code == 108 || code == 107) { if (seekRefusedTries < 3) { seekRefusedTries++; seekRetryAt = SDL_GetTicks() + 800u * seekRefusedTries; } }
     else if (code != 0) { size_t l = S.error ? strlen(S.err) : 0; if (l < sizeof S.err - 8) snprintf(S.err + l, sizeof S.err - l, "%s%.0f %s", l ? "; " : "", code, txt); S.error = 1; S.playing = 0; S.st = VID_ERROR; } /* every code of the failure ("202 Media Not Found; 100 Playing error; 203 ..."): the player reads the reason from them */
   }

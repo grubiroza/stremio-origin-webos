@@ -975,6 +975,7 @@ char *mkv_track_header(MkvSession *s, int n) {
 long long mkv_attachments_at(MkvSession *s) { if (!s) return -1; lock(s); long long p = s->listed ? s->info.attachPos : -1; unlock(s); return p; }
 int mkv_has_index(MkvSession *s) { if (!s) return -1; lock(s); int r = s->listed ? s->info.cuesPos >= 0 : -1; unlock(s); return r; }
 int mkv_listed(MkvSession *s) { if (!s) return 0; lock(s); int l = s->listed; unlock(s); return l; }
+double mkv_duration(MkvSession *s) { if (!s) return 0; lock(s); double d = s->listed && !s->mp4 && s->info.duration > 0 ? s->info.duration : 0; unlock(s); return d; } /* domar (0062) */
 /* ready: it has lines near the playhead, or everything there has been read (a quiet stretch has none to show) */
 int mkv_track_status(MkvSession *s, int n) {
   if (!s) return -1; lock(s); int r = 0; TState *t = ts_by_n(s, n);
