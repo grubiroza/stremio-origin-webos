@@ -135,6 +135,14 @@ make the pipeline die ("1000 pipeline died abnormally"), with or without audio, 
 | [3a6cc05](https://github.com/grubiroza/stremio-origin-webos/commit/3a6cc05d41b99f5fa64b5b82d36a2d5b400afdcb) | the same for an H.264 film (8-bit 4:2:0 by its avcC, progressive), as Dolby Vision **profile 9** (AVC base layer, SDR): the RPU made for an 8-bit base (`DVS_SDR8`), carried in a NAL unit of type 28 with the same two-byte header 7C 01 (as Dolby's dlb_mp4base and GPAC know it), the PMT's H.264 entry marked with profile 9; its own lesson (`dvSdr9Hls`) |
 | [28805fb](https://github.com/grubiroza/stremio-origin-webos/commit/28805fb02396f56efef05a755e23d61c698fb4da) | after the first evening with real films: DTS is made Dolby Digital instead of copied (in the converted stream the TV saw no audio track at all); interlaced pictures are tried too (a Blu-ray 1080i25 copy plays with the RPU, x264's interlaced ones make the pipeline die: then the plain file, nothing learned); nothing is decided while the TV plays something else than the file (a debrid notice clip: its length against the Matroska Duration); error 600 behind another app is a pipeline to load again once back, not a failure (a paused film behind YouTube ended in "Playback error"); another audio track keeps the Dolby Vision of HDR10 / SDR |
 
+## Changes of 2026-11-28, evening (not reported yet)
+
+Back in the player, as one viewer asked for it: it puts away what is on screen before it leaves the film.
+
+| Commit | What |
+|---|---|
+| [c08cbbb](https://github.com/grubiroza/stremio-origin-webos/commit/c08cbbb7f23a38ebb6c113804b77a2b81bcd7369) | paused, the first Back puts the controls away (the paused picture alone, without the shade and "Paused"), the next one leaves (upstream it left at once); a menu's Back closes it at once, from its tabs too, and the controls with it (they stayed up for 5 s, and while paused until another key); any key or the pointer brings them back |
+
 ## Local aids (not meant for upstream)
 
 | Commit | What |
