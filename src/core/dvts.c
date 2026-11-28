@@ -1,7 +1,10 @@
 /* domar (0056): an HDR10 film shown as Dolby Vision, the TS side (dvts.h). Proven first by hand on this TV (LG C9,
    2026-11-27): an HDR10 clip with dovi_tool's static 8.1 RPU in each frame, through this app's converter, showed as
    DolbyVision (dynamicRange dolbyHdr). domar (0057): an SDR picture the same way, its RPU mapping SDR into PQ
-   (dvsdr_rpu.h) and the base layer marked SDR (compatibility 2); proven by hand on the same TV 2026-11-28. */
+   (dvsdr_rpu.h) and the base layer marked SDR (compatibility 2); proven by hand on the same TV 2026-11-28. domar (0060):
+   an H.264 SDR picture as profile 9 (8-bit AVC base layer, SDR): the same RPU made for an 8-bit base, carried in a NAL
+   unit of type 28 (Dolby's own muxer, dlb_mp4base parser_avc.c; GPAC GF_AVC_NALU_DV_RPU) whose two-byte header 7C 01
+   is the HEVC one (7C = nal_ref_idc 3, type 28 in AVC), the stream's entry being H.264 (0x1B) */
 #include "core/dvts.h"
 #include "core/dvstatic_rpu.h"
 #include "core/dvsdr_rpu.h"
@@ -19,7 +22,7 @@ struct DvTs {
   const uint8_t *rk, *rn; int rkN, rnN; /* the RPU NAL units: a keyframe's (scene refresh), the frames' after it */
   uint8_t desc[13]; int descLen;
   uint8_t part[TSP]; int partN;         /* a packet cut between two writes */
-  int pmtPid, vidPid;                   /* -1 until the PAT / PMT say */
+  int pmtPid, vidPid, stype;            /* -1 until the PAT / PMT say; the video's stream_type marked (0x24 HEVC, 0x1B H.264) */
   uint8_t *pend; int pendN, pendCap;    /* the frame waiting for its end: its packets and those between them */
   int open, lastVid, pesLen, key;       /* a frame waits; its last video packet; its PES_packet_length (-1 none); a keyframe */
   /* the video's continuity counter: each added packet shifts the converter's own numbers by one (base); a segment that
@@ -44,15 +47,15 @@ int dvts_level(int w, int h, double fps) { /* the smallest level whose pixel rat
   for (int i = 0; i < 10; i++) if (r <= R[i] * 1.001) return i + 1;
   return 10;
 }
-/* the same descriptors the converter writes for a real profile 8 picture: profile 8, the level, RPU and base layer
-   present, no enhancement layer, the base layer's compatibility (1 HDR10, 2 SDR) */
-static DvTs *dvts_make(const uint8_t *rk, int rkN, const uint8_t *rn, int rnN, int compat, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
+/* the same descriptors the converter writes for a real profile 8 picture: the profile (8; 9 for H.264), the level, RPU
+   and base layer present, no enhancement layer, the base layer's compatibility (1 HDR10, 2 SDR) */
+static DvTs *dvts_make(const uint8_t *rk, int rkN, const uint8_t *rn, int rnN, int prof, int stype, int compat, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
   DvTs *f = calloc(1, sizeof *f); if (!f) return NULL;
   f->ob = malloc(OBUF); if (!f->ob) { free(f); return NULL; }
   f->out = out; f->ud = ud; f->lastVid = f->pesLen = -1; f->lastOut = -1;
   f->base = carry ? carry->base & 15 : 0; f->lastOrig = carry ? carry->lastOrig : -1; f->vidPid = carry ? carry->vidPid : -1; f->pmtPid = carry ? carry->pmtPid : -1;
-  f->rk = rk; f->rkN = rkN; f->rn = rn; f->rnN = rnN;
-  unsigned v = 8u << 9 | (unsigned)(level & 0x3f) << 3 | 1u << 2 | 0u << 1 | 1u; int k = 0;
+  f->rk = rk; f->rkN = rkN; f->rn = rn; f->rnN = rnN; f->stype = stype;
+  unsigned v = (unsigned)(prof & 0x7f) << 9 | (unsigned)(level & 0x3f) << 3 | 1u << 2 | 0u << 1 | 1u; int k = 0;
   f->desc[k++] = 0x05; f->desc[k++] = 4; f->desc[k++] = 'D'; f->desc[k++] = 'O'; f->desc[k++] = 'V'; f->desc[k++] = 'I';
   f->desc[k++] = 0xB0; f->desc[k++] = 5; f->desc[k++] = 1; f->desc[k++] = 0; f->desc[k++] = (uint8_t)(v >> 8); f->desc[k++] = (uint8_t)v; f->desc[k++] = (uint8_t)((compat & 15) << 4);
   f->descLen = k;
@@ -62,14 +65,14 @@ DvTs *dvts_new(int maxCll, int mastMax, int level, const DvtsCarry *carry, dvts_
   int cll, mast; dvts_pick(maxCll, mastMax, &cll, &mast); const DvsRpu *r = NULL;
   for (int i = 0; i < DVS_RPU_N; i++) if (DVS_RPU[i].mast == mast && DVS_RPU[i].cll == cll) r = &DVS_RPU[i];
   if (!r) r = &DVS_RPU[2];
-  return dvts_make(r->key, r->keyN, r->next, r->nextN, 1, level, carry, out, ud);
+  return dvts_make(r->key, r->keyN, r->next, r->nextN, 8, 0x24, 1, level, carry, out, ud);
 }
 int dvts_sdr_preset(int bright, int *white, int *peak) { /* domar (0057): 0 white at 203 nits, 1 the highlights spread above it */
   int i = bright > 0 && DVS_SDR_N > 1 ? 1 : 0; if (white) *white = DVS_SDR[i].white; if (peak) *peak = DVS_SDR[i].peak; return i;
 }
-DvTs *dvts_new_sdr(int bright, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
-  const DvsSdrRpu *r = &DVS_SDR[dvts_sdr_preset(bright, NULL, NULL)];
-  return dvts_make(r->key, r->keyN, r->next, r->nextN, 2, level, carry, out, ud);
+DvTs *dvts_new_sdr(int bright, int avc, int level, const DvtsCarry *carry, dvts_out out, void *ud) {
+  int i = dvts_sdr_preset(bright, NULL, NULL); const DvsSdrRpu *r = avc ? &DVS_SDR8[i < DVS_SDR8_N ? i : 0] : &DVS_SDR[i]; /* domar (0060): H.264 = profile 9 */
+  return dvts_make(r->key, r->keyN, r->next, r->nextN, avc ? 9 : 8, avc ? 0x1B : 0x24, 2, level, carry, out, ud);
 }
 void dvts_free(DvTs *f) { if (!f) return; free(f->pend); free(f->ob); free(f); }
 void dvts_stats(const DvTs *f, long *rpus, long *pmts, long *odd) { *rpus = f->rpus; *pmts = f->pmts; *odd = f->odd; }
@@ -103,7 +106,7 @@ static void pat_read(DvTs *f, const uint8_t *t) {
   int sl = ((t[o + 1] & 0x0f) << 8) | t[o + 2], end = o + 3 + sl - 4; if (end > TSP) end = TSP;
   for (int i = o + 8; i + 4 <= end; i += 4) { int prog = t[i] << 8 | t[i + 1]; if (prog) { f->pmtPid = ((t[i + 2] & 0x1f) << 8) | t[i + 3]; return; } }
 }
-/* a PMT that starts in this packet: the HEVC entry's PID taken, and the descriptors added to it (its length, the
+/* a PMT that starts in this packet: the video entry's PID taken (HEVC; 0060: H.264 for profile 9), and the descriptors added to it (its length, the
    section's and the CRC again); one carrying them already, or with no room, is left as it is */
 static void pmt_fix(DvTs *f, uint8_t *t) {
   int o = payload_at(t); if (o < 0) return; o += 1 + t[o]; if (o + 12 > TSP) return;
@@ -113,7 +116,7 @@ static void pmt_fix(DvTs *f, uint8_t *t) {
   while (at + 5 <= end - 4) {
     int type = sec[at], pid = ((sec[at + 1] & 0x1f) << 8) | sec[at + 2], eil = ((sec[at + 3] & 0x0f) << 8) | sec[at + 4], de = at + 5 + eil;
     if (de > end - 4) return;
-    if (type == 0x24) {
+    if (type == f->stype) {
       f->vidPid = pid;
       for (int i = at + 5; i + 1 < de; i += 2 + sec[i + 1]) if (sec[i] == 0xB0) return; /* (marked already) */
       if (o + end + f->descLen > TSP) { f->odd++; return; }

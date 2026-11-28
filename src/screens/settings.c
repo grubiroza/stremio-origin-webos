@@ -239,7 +239,7 @@ static void build(void) {
   set_s(&playBase[7], "dv7Convert", "Dolby Vision for Blu-ray copies", "Their picture is converted on this TV so it shows in Dolby Vision, not HDR10", OO, 2, "true");
   set_s(&playBase[15], "dvHdr10", "Dolby Vision for HDR10", "HDR10 films are shown in Dolby Vision, with fixed values from the film. Off: HDR10. From the next film on", OO, 2, "true"); /* domar (0056): dvhdr_convert, dvts.c */
   { static const Opt DS[] = { { "off", "Off" }, { "on", "On" }, { "bright", "Brighter" } }; /* domar (0057): dvsdr_convert, dvts.c, dvsdr_rpu.h */
-    set_s(&playBase[16], "dvSdr", "Dolby Vision for SDR", "SDR films (HEVC 10-bit) in Dolby Vision, white at 203 nits. Brighter: their highlights lifted. From the next film on", DS, 3, "on"); }
+    set_s(&playBase[16], "dvSdr", "Dolby Vision for SDR", "SDR films (HEVC 10-bit, H.264) in Dolby Vision, white at 203 nits. Brighter: their highlights lifted. From the next film on", DS, 3, "on"); }
   set_s(&playBase[14], "hdrOwn", "HDR10 values of the film", "The TV is told the film\xe2\x80\x99s own brightness values. Off: none, as before. From the next film on", OO, 2, "true"); /* domar: video_hdr_values (webOS 3 / 4) */
   set_s(&playBase[6], "bgTrailerVol", "Volume", "The sound comes up softly to this level", SVOL, 10, "70"); playBase[6].sub = 1; /* (shown right under the trailers while they are on: play_layout; drawn as theirs, set in) */
   usb_row();

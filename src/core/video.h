@@ -62,4 +62,5 @@ void   video_hdr_values(int on);             /* domar: webOS 3 / 4: an HDR10 fil
 /* domar (0056): the HDR10 film playing as the TV's player reports it: MaxCLL and the mastering display's peak in nits
    (0 not given), and the stream's bit rate (0 not known). 1 while the TV says HDR10, else 0 */
 int    video_hdr10_levels(int *maxCll, int *mastMax, long *bits);
+int    video_interlaced(void);   /* domar (0060): 1 while the TV's player says the picture is interlaced, else 0 */
 #endif

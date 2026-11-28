@@ -484,6 +484,7 @@ int video_width(void) { return S.w; }
 int video_height(void) { return S.h; }
 double video_fps(void) { pthread_mutex_lock(&mu); double f = S.fps; pthread_mutex_unlock(&mu); return f; }
 int video_hdr(char *out, int cap) { pthread_mutex_lock(&mu); snprintf(out, (size_t)cap, "%s", S.hdr); pthread_mutex_unlock(&mu); return out[0] != 0; }
+int video_interlaced(void) { pthread_mutex_lock(&mu); int r = !strncasecmp(S.scan, "interlace", 9); pthread_mutex_unlock(&mu); return r; } /* domar (0060): videoInfo's scanType */
 int video_hdr10_levels(int *maxCll, int *mastMax, long *bits) { /* domar (0056): from videoInfo's "SEI" (mastering in 0.0001 nits) */
   pthread_mutex_lock(&mu); int hdr10 = !strcasecmp(S.hdr, "HDR10"); double c = num_of(S.sei, "\"maxContentLightLevel\":"), m = num_of(S.sei, "\"maxDisplayMasteringLuminance\":"); long b = S.bits; pthread_mutex_unlock(&mu);
   *maxCll = c > 0 && c < 20000 ? (int)c : 0; *mastMax = m > 0 ? (int)(m / 10000.0 + 0.5) : 0; if (*mastMax > 20000) *mastMax = 0; *bits = b > 0 ? b : 0;

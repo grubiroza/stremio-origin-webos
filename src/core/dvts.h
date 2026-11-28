@@ -15,8 +15,9 @@ typedef struct { int base, lastOrig, vidPid, pmtPid; } DvtsCarry;
 /* maxCll / mastMax in nits (0 not known); level the Dolby Vision level for the descriptor */
 DvTs *dvts_new(int maxCll, int mastMax, int level, const DvtsCarry *carry, dvts_out out, void *ud);
 /* domar (0057): an SDR picture (BT.709, HEVC Main 10) as Dolby Vision: its RPU maps SDR into PQ (dvsdr_rpu.h), the
-   descriptor says the base layer is SDR (compatibility 2); bright 0 white at 203 nits, 1 the highlights spread above */
-DvTs *dvts_new_sdr(int bright, int level, const DvtsCarry *carry, dvts_out out, void *ud);
+   descriptor says the base layer is SDR (compatibility 2); bright 0 white at 203 nits, 1 the highlights spread above.
+   domar (0060): avc 1 = an H.264 picture (8-bit): profile 9, the RPU made for an 8-bit base, in a NAL unit of type 28 */
+DvTs *dvts_new_sdr(int bright, int avc, int level, const DvtsCarry *carry, dvts_out out, void *ud);
 int   dvts_sdr_preset(int bright, int *white, int *peak);          /* the preset it takes and its white / peak (nits, for the log) */
 int   dvts_write(void *f, const unsigned char *p, int n);          /* the converter's writer: n, or < 0 to stop */
 int   dvts_flush(DvTs *f);                                         /* the last frame and whatever waits: 0, < 0 failed */
