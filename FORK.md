@@ -112,6 +112,19 @@ Dolby Vision processing; an HDR10+ source's dynamic values are not used (yet).
 |---|---|
 | [4c7fd02](https://github.com/grubiroza/stremio-origin-webos/commit/4c7fd02f99950b7ba7b7d609c0767ede1e864bae) | once the TV says the file plays as HDR10 (HEVC in Matroska, no Dolby Vision of its own, at most 35 Mbit/s), the picture goes the way a web copy's profile 8 goes (converted on the TV, from local HLS), and on its way (`dvts.c`) each frame gets a static profile 8.1 RPU made beforehand by dovi_tool 2.3.4 from the film's MaxCLL and mastering peak (`dvstatic_rpu.h`), and the PMT's HEVC entry the DOVI registration and the Dolby Vision video stream descriptor; the base layer is untouched. Settings > Playback > "Dolby Vision for HDR10" (on); its own lesson (`dvHdrHls`) |
 
+## Changes of 2026-11-28 (not reported yet)
+
+Dolby Vision for SDR: on a TV with Dolby Vision, an SDR film (HEVC 10-bit) is shown in the TV's Dolby Vision modes,
+the way some streaming boxes send everything as Dolby Vision. The RPU maps the SDR signal into PQ (white at 203 nits,
+or "Brighter" with the highlights spread up to ~500), checked first on the PC (libplacebo's own Dolby Vision decoding
+gives the intended nits on real frames) and then on an LG C9 (webOS 4.5): a 4K SDR clip showed as DolbyVision,
+`dynamicRange: dolbyHdr`, with the picture as the SDR one. Worth knowing for anyone making such RPUs: on this TV an RPU
+whose luma polynomial had a coefficient of 73.7 gave no picture at all, while dovi_tool's 8.4 RPU (up to 61.9) plays.
+
+| Commit | What |
+|---|---|
+| [dedb6c6](https://github.com/grubiroza/stremio-origin-webos/commit/dedb6c61c97793dcea8150a8b0663bdbf0c758cf) | once the TV says the file plays as SDR (HEVC Main 10 in Matroska, no Dolby Vision of its own, at most 35 Mbit/s), the picture goes the HDR10 way above, with a static RPU that maps SDR (BT.709, gamma 2.4) into PQ: luma in 8 second-order pieces, chroma by third-order MMR fitted in ICtCp, BT.709 matrices and L9 (`dvsdr_rpu.h`); the descriptor marks the base layer SDR (compatibility 2). An RPU now spans as many TS packets as it needs. Settings > Playback > "Dolby Vision for SDR" (Off / On / Brighter; on); its own lesson (`dvSdrHls`); `tests/dvts` runs the filter on the PC |
+
 ## Local aids (not meant for upstream)
 
 | Commit | What |
